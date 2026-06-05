@@ -1,9 +1,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { StackNavigationProp } from '@react-navigation/stack';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 
-type Props = { navigation: StackNavigationProp<RootStackParamList, 'Camera'> };
+type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Camera'> };
 
 export default function CameraScreen({ navigation }: Props) {
   return (

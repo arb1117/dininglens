@@ -1,9 +1,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { StackNavigationProp } from '@react-navigation/stack';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 
-type Props = { navigation: StackNavigationProp<RootStackParamList, 'Onboarding'> };
+type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Onboarding'> };
 
 export default function OnboardingScreen({ navigation }: Props) {
   return (

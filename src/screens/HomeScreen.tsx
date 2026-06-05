@@ -1,9 +1,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
-import { StackNavigationProp } from '@react-navigation/stack';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 
-type Props = { navigation: StackNavigationProp<RootStackParamList, 'Home'> };
+type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Home'> };
 
 const MENU_ITEMS = [
   'Grilled Chicken Breast',

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
-import { StackNavigationProp } from '@react-navigation/stack';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem } from '../context/MealContext';
 
-type Props = { navigation: StackNavigationProp<RootStackParamList, 'Estimate'> };
+type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Estimate'> };
 
 type Portion = 'Small' | 'Normal' | 'Large' | 'Double';
 

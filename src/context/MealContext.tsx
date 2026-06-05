@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
+import { MenuItem, FAKE_MENU } from '../services/menuService';
 
 export type MacroItem = {
   name: string;
@@ -19,18 +20,30 @@ export type LoggedMeal = {
 type MealContextType = {
   mealLog: LoggedMeal[];
   addMeal: (meal: LoggedMeal) => void;
+  menuItems: MenuItem[];
+  setMenuItems: (items: MenuItem[]) => void;
 };
 
-const MealContext = createContext<MealContextType>({ mealLog: [], addMeal: () => {} });
+const MealContext = createContext<MealContextType>({
+  mealLog: [],
+  addMeal: () => {},
+  menuItems: FAKE_MENU,
+  setMenuItems: () => {},
+});
 
 export function MealProvider({ children }: { children: ReactNode }) {
   const [mealLog, setMealLog] = useState<LoggedMeal[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(FAKE_MENU);
 
   function addMeal(meal: LoggedMeal) {
     setMealLog(prev => [meal, ...prev]);
   }
 
-  return <MealContext.Provider value={{ mealLog, addMeal }}>{children}</MealContext.Provider>;
+  return (
+    <MealContext.Provider value={{ mealLog, addMeal, menuItems, setMenuItems }}>
+      {children}
+    </MealContext.Provider>
+  );
 }
 
 export function useMealContext() {

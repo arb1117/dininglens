@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -15,12 +15,6 @@ const MULTIPLIERS: Record<Portion, number> = {
   Double: 2.0,
 };
 
-const BASE_ITEMS = [
-  { name: 'Grilled Chicken Breast', cal: 165, protein: 31, carbs: 0, fat: 3.6 },
-  { name: 'White Rice', cal: 130, protein: 2.7, carbs: 28, fat: 0.3 },
-  { name: 'Green Beans', cal: 35, protein: 1.8, carbs: 8, fat: 0.2 },
-];
-
 const PORTIONS: Portion[] = ['Small', 'Normal', 'Large', 'Double'];
 
 function round1(n: number) {
@@ -28,12 +22,27 @@ function round1(n: number) {
 }
 
 export default function EstimateScreen({ navigation }: Props) {
-  const { addMeal } = useMealContext();
-  const [portions, setPortions] = useState<Record<string, Portion>>(
-    Object.fromEntries(BASE_ITEMS.map(i => [i.name, 'Normal' as Portion]))
-  );
+  const { addMeal, menuItems } = useMealContext();
 
-  function getScaled(item: typeof BASE_ITEMS[0], portion: Portion) {
+  // Use first 3 items from the live menu as "detected" items
+  const detectedItems = useMemo(() =>
+    menuItems.slice(0, 3).map(item => ({
+      id: item.id,
+      name: item.name,
+      cal: item.calories,
+      protein: item.protein,
+      carbs: item.carbs,
+      fat: item.fat,
+    })),
+  [menuItems]);
+
+  const [portions, setPortions] = useState<Record<string, Portion>>({});
+
+  function getPortionFor(id: string): Portion {
+    return portions[id] ?? 'Normal';
+  }
+
+  function getScaled(item: typeof detectedItems[0], portion: Portion) {
     const m = MULTIPLIERS[portion];
     return {
       cal: round1(item.cal * m),
@@ -43,9 +52,9 @@ export default function EstimateScreen({ navigation }: Props) {
     };
   }
 
-  const totals = BASE_ITEMS.reduce(
+  const totals = detectedItems.reduce(
     (acc, item) => {
-      const scaled = getScaled(item, portions[item.name]);
+      const scaled = getScaled(item, getPortionFor(item.id));
       return {
         cal: round1(acc.cal + scaled.cal),
         protein: round1(acc.protein + scaled.protein),
@@ -57,9 +66,10 @@ export default function EstimateScreen({ navigation }: Props) {
   );
 
   function handleLogMeal() {
-    const items: MacroItem[] = BASE_ITEMS.map(item => {
-      const scaled = getScaled(item, portions[item.name]);
-      return { name: item.name, portion: portions[item.name], ...scaled };
+    const items: MacroItem[] = detectedItems.map(item => {
+      const portion = getPortionFor(item.id);
+      const scaled = getScaled(item, portion);
+      return { name: item.name, portion, ...scaled };
     });
     addMeal({
       id: String(Date.now()),
@@ -74,19 +84,20 @@ export default function EstimateScreen({ navigation }: Props) {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.header}>Meal Estimate</Text>
       <Text style={styles.sectionLabel}>Detected Items</Text>
-      {BASE_ITEMS.map(item => {
-        const scaled = getScaled(item, portions[item.name]);
+      {detectedItems.map(item => {
+        const portion = getPortionFor(item.id);
+        const scaled = getScaled(item, portion);
         return (
-          <View key={item.name} style={styles.itemCard}>
+          <View key={item.id} style={styles.itemCard}>
             <Text style={styles.itemName}>{item.name}</Text>
             <View style={styles.portionRow}>
               {PORTIONS.map(p => (
                 <TouchableOpacity
                   key={p}
-                  style={[styles.portionBtn, portions[item.name] === p && styles.portionBtnActive]}
-                  onPress={() => setPortions(prev => ({ ...prev, [item.name]: p }))}
+                  style={[styles.portionBtn, portion === p && styles.portionBtnActive]}
+                  onPress={() => setPortions(prev => ({ ...prev, [item.id]: p }))}
                 >
-                  <Text style={[styles.portionBtnText, portions[item.name] === p && styles.portionBtnTextActive]}>
+                  <Text style={[styles.portionBtnText, portion === p && styles.portionBtnTextActive]}>
                     {p}
                   </Text>
                 </TouchableOpacity>

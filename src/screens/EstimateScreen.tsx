@@ -371,7 +371,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
       return { name: item.name, portion: VISUAL_LABELS[portion].label, ...scaled };
     });
     addMeal({ id: String(Date.now()), timestamp: new Date().toISOString(), period: autoDetectPeriod(), items: mealItems, totals });
-    navigation.pop();
+    navigation.navigate('MainTabs', { screen: 'Dashboard' });
   }
 
   const imageQualityError = !hasReanalyzed && (

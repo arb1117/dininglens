@@ -4,6 +4,23 @@ import { MenuItem, FAKE_MENU } from '../services/menuService';
 import { Venue } from '../services/venueService';
 
 const STORAGE_KEY = '@dininglens_meal_log';
+const GOALS_KEY   = '@dininglens_goals';
+
+export type UserGoals = {
+  preset: 'lose' | 'maintain' | 'build';
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+};
+
+const DEFAULT_GOALS: UserGoals = {
+  preset: 'maintain',
+  calories: 2200,
+  protein: 150,
+  carbs: 220,
+  fat: 70,
+};
 
 export type MacroItem = {
   name: string;
@@ -27,6 +44,8 @@ type MealContextType = {
   mealLog: LoggedMeal[];
   addMeal: (meal: LoggedMeal) => void;
   updateMealItem: (mealId: string, itemIndex: number, updated: MacroItem) => void;
+  goals: UserGoals;
+  setGoals: (goals: UserGoals) => void;
   menuItems: MenuItem[];
   setMenuItems: (items: MenuItem[]) => void;
   periodLabel: string;
@@ -39,6 +58,8 @@ const MealContext = createContext<MealContextType>({
   mealLog: [],
   addMeal: () => {},
   updateMealItem: () => {},
+  goals: DEFAULT_GOALS,
+  setGoals: () => {},
   menuItems: FAKE_MENU,
   setMenuItems: () => {},
   periodLabel: 'Dinner',
@@ -49,6 +70,7 @@ const MealContext = createContext<MealContextType>({
 
 export function MealProvider({ children }: { children: ReactNode }) {
   const [mealLog, setMealLog] = useState<LoggedMeal[]>([]);
+  const [goals, setGoalsState] = useState<UserGoals>(DEFAULT_GOALS);
   const [menuItems, setMenuItems] = useState<MenuItem[]>(FAKE_MENU);
   const [periodLabel, setPeriodLabel] = useState('Dinner');
   const [venue, setVenue] = useState<Venue | null>(null);
@@ -56,14 +78,19 @@ export function MealProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(raw => {
       if (raw) {
-        try {
-          setMealLog(JSON.parse(raw));
-        } catch {
-          // corrupted storage — start fresh
-        }
+        try { setMealLog(JSON.parse(raw)); } catch {}
+      }
+    });
+    AsyncStorage.getItem(GOALS_KEY).then(raw => {
+      if (raw) {
+        try { setGoalsState(JSON.parse(raw)); } catch {}
       }
     });
   }, []);
+
+  function setGoals(g: UserGoals) {
+    setGoalsState(g);
+  }
 
   function addMeal(meal: LoggedMeal) {
     setMealLog(prev => {
@@ -96,7 +123,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
 
   return (
     <MealContext.Provider
-      value={{ mealLog, addMeal, updateMealItem, menuItems, setMenuItems, periodLabel, setPeriodLabel, venue, setVenue }}
+      value={{ mealLog, addMeal, updateMealItem, goals, setGoals, menuItems, setMenuItems, periodLabel, setPeriodLabel, venue, setVenue }}
     >
       {children}
     </MealContext.Provider>

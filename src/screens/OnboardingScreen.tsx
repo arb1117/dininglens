@@ -23,14 +23,14 @@ export default function OnboardingScreen({ navigation }: Props) {
 
       <TouchableOpacity
         style={styles.button}
-        onPress={() => navigation.navigate('Camera')}
+        onPress={() => navigation.navigate('Goals')}
       >
         <Text style={styles.buttonText}>Enable Location</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.skipLink}
-        onPress={() => navigation.navigate('Camera')}
+        onPress={() => navigation.navigate('Goals')}
       >
         <Text style={styles.skipText}>Skip for now</Text>
       </TouchableOpacity>

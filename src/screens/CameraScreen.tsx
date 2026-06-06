@@ -23,7 +23,7 @@ type DiningHallStatus = 'inactive' | 'loading' | 'active';
 type ScanMode = 'photo' | 'barcode';
 
 export default function CameraScreen({ navigation }: Props) {
-  const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems, mealLog } =
+  const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems, mealLog, goals } =
     useMealContext();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -41,8 +41,6 @@ export default function CameraScreen({ navigation }: Props) {
 
   const isDiningHallMode = diningHallStatus === 'active';
 
-  const DAILY_GOAL_CAL = 2500;
-
   const todayTotals = useMemo(() => {
     const today = new Date().toDateString();
     return mealLog
@@ -58,8 +56,8 @@ export default function CameraScreen({ navigation }: Props) {
       );
   }, [mealLog]);
 
-  const calProgress = Math.min(todayTotals.cal / DAILY_GOAL_CAL, 1);
-  const calOver = todayTotals.cal > DAILY_GOAL_CAL;
+  const calProgress = Math.min(todayTotals.cal / goals.calories, 1);
+  const calOver = todayTotals.cal > goals.calories;
 
   function formatCal(n: number): string {
     return n >= 1000

@@ -687,6 +687,62 @@ app.post('/chat', async (req, res) => {
   }
 });
 
+// ─── /calculate-tdee ─────────────────────────────────────────────────────────
+// Mifflin-St Jeor BMR → Claude picks activity multiplier from plain-English desc.
+
+app.post('/calculate-tdee', async (req, res) => {
+  console.log('[/calculate-tdee] request received');
+  const { height_cm, weight_kg, age, sex, goal, activityDescription } = req.body;
+  if (!height_cm || !weight_kg || !age || !sex || !goal) {
+    return res.status(400).json({ error: 'height_cm, weight_kg, age, sex, goal required' });
+  }
+
+  // Mifflin-St Jeor BMR (metric)
+  const bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) + (sex === 'male' ? 5 : -161);
+  console.log(`[/calculate-tdee] BMR=${Math.round(bmr)} goal=${goal}`);
+
+  let multiplier = 1.55;
+  let explanation = 'Based on your description, you appear moderately active.';
+
+  if (activityDescription && activityDescription.trim().length > 5) {
+    try {
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 128,
+        messages: [{
+          role: 'user',
+          content: `Based on this lifestyle description, estimate an activity multiplier for TDEE calculation.\nSedentary = 1.2, Light = 1.375, Moderate = 1.55, Active = 1.725, Very Active = 1.9\nDescription: "${activityDescription.trim()}"\nReturn JSON only: { "multiplier": <number>, "explanation": "<one sentence, plain English>" }`,
+        }],
+      });
+      const parsed = extractJSON(response.content[0]?.text ?? '{}');
+      if (parsed.multiplier >= 1.2 && parsed.multiplier <= 1.9) multiplier = parsed.multiplier;
+      if (parsed.explanation) explanation = parsed.explanation;
+    } catch (err) {
+      console.error('[/calculate-tdee] Claude error:', err.message);
+    }
+  }
+
+  const tdee = Math.round(bmr * multiplier);
+
+  // Goal-based calorie adjustment
+  const calorieAdjust = { lose: -500, maintain: 0, build: 300 };
+  const calories = Math.max(Math.round(tdee + (calorieAdjust[goal] ?? 0)), 1200);
+
+  // Macro splits (protein & carbs = 4 cal/g, fat = 9 cal/g)
+  const splits = {
+    lose:     { p: 0.40, c: 0.35, f: 0.25 },
+    maintain: { p: 0.30, c: 0.45, f: 0.25 },
+    build:    { p: 0.30, c: 0.50, f: 0.20 },
+  };
+  const split = splits[goal] ?? splits.maintain;
+  const protein = Math.round((calories * split.p) / 4);
+  const carbs   = Math.round((calories * split.c) / 4);
+  const fat     = Math.round((calories * split.f) / 9);
+
+  console.log(`[/calculate-tdee] TDEE=${tdee} cal=${calories} multiplier=${multiplier}`);
+  res.json({ bmr: Math.round(bmr), tdee, multiplier, explanation, calories, protein, carbs, fat });
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3001;

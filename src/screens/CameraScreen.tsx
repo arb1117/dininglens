@@ -35,7 +35,6 @@ export default function CameraScreen({ navigation }: Props) {
   const [scanMode, setScanMode] = useState<ScanMode>('photo');
   const [barcodeScanning, setBarcodeScanning] = useState(false);
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
-  const [showMacroBar, setShowMacroBar] = useState(false);
   const [showStreakModal, setShowStreakModal] = useState(false);
 
   const cameraRef = useRef<CameraView>(null);
@@ -333,15 +332,15 @@ export default function CameraScreen({ navigation }: Props) {
           <Text style={styles.historyButtonText}>📋</Text>
         </TouchableOpacity>
 
-        {/* Daily summary bar — tap to reveal macros, long-press to open History */}
+        {/* Daily summary bar — tap to open Goals */}
         <TouchableOpacity
           style={styles.summaryBar}
-          onPress={() => setShowMacroBar(v => !v)}
-          onLongPress={() => navigation.navigate('History')}
+          onPress={() => navigation.navigate('Goals')}
           activeOpacity={0.8}
         >
+          <Text style={styles.summaryGearIcon}>⚙️</Text>
           {todayTotals.cal === 0 ? (
-            <Text style={styles.summaryEmpty}>Start logging · tap to track</Text>
+            <Text style={styles.summaryEmpty}>Start logging · tap to set goal</Text>
           ) : (
             <>
               <View style={styles.summaryCalRow}>
@@ -358,15 +357,13 @@ export default function CameraScreen({ navigation }: Props) {
                   </TouchableOpacity>
                 )}
               </View>
-              {showMacroBar && (
-                <View style={styles.summaryMacros}>
-                  <Text style={styles.summarySep}>{todayTotals.protein}g protein</Text>
-                  <Text style={styles.summarySep}>·</Text>
-                  <Text style={styles.summarySep}>{todayTotals.carbs}g carbs</Text>
-                  <Text style={styles.summarySep}>·</Text>
-                  <Text style={styles.summarySep}>{todayTotals.fat}g fat</Text>
-                </View>
-              )}
+              <View style={styles.summaryMacros}>
+                <Text style={styles.summarySep}>{todayTotals.protein}g protein</Text>
+                <Text style={styles.summarySep}>·</Text>
+                <Text style={styles.summarySep}>{todayTotals.carbs}g carbs</Text>
+                <Text style={styles.summarySep}>·</Text>
+                <Text style={styles.summarySep}>{todayTotals.fat}g fat</Text>
+              </View>
             </>
           )}
           <View style={styles.progressTrack}>
@@ -527,8 +524,15 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: 'rgba(0,0,0,0.72)',
     paddingHorizontal: 18,
-    paddingTop: 10,
+    paddingTop: 8,
     paddingBottom: 18,
+  },
+  summaryGearIcon: {
+    position: 'absolute',
+    right: 14,
+    top: 8,
+    fontSize: 14,
+    opacity: 0.55,
   },
   summaryCalLine: {
     fontSize: 15,
@@ -541,7 +545,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   summarySep: {
     fontSize: 12,

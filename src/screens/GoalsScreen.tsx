@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
   ScrollView, KeyboardAvoidingView, Platform,
@@ -12,23 +12,26 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Goals'>;
 
 type PresetKey = 'lose' | 'maintain' | 'build';
 
-const PRESETS: { key: PresetKey; emoji: string; label: string; goals: Omit<UserGoals, 'preset'> }[] = [
+const PRESETS: { key: PresetKey; emoji: string; label: string; desc: string; goals: Omit<UserGoals, 'preset'> }[] = [
   {
     key: 'lose',
     emoji: '🔥',
     label: 'Lose Weight',
+    desc: 'I want to burn fat and slim down',
     goals: { calories: 1800, protein: 150, carbs: 150, fat: 60 },
   },
   {
     key: 'maintain',
     emoji: '⚖️',
     label: 'Stay the Same',
+    desc: 'I want to maintain my current weight',
     goals: { calories: 2200, protein: 150, carbs: 220, fat: 70 },
   },
   {
     key: 'build',
     emoji: '💪',
     label: 'Build Muscle',
+    desc: 'I want to get stronger and gain mass',
     goals: { calories: 2800, protein: 200, carbs: 280, fat: 90 },
   },
 ];
@@ -46,6 +49,26 @@ export default function GoalsScreen({ navigation }: Props) {
   const [carbs,    setCarbs]    = useState(String(activePreset.goals.carbs));
   const [fat,      setFat]      = useState(String(activePreset.goals.fat));
 
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const preset = PRESETS.find(p => p.key === selected)!;
+      const g: UserGoals = {
+        preset: selected,
+        calories: parseInt(calories) || preset.goals.calories,
+        protein:  parseInt(protein)  || preset.goals.protein,
+        carbs:    parseInt(carbs)    || preset.goals.carbs,
+        fat:      parseInt(fat)      || preset.goals.fat,
+      };
+      AsyncStorage.setItem(GOALS_KEY, JSON.stringify(g)).catch(() => {});
+      setGoals(g);
+    }, 500);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, calories, protein, carbs, fat]);
+
   function selectPreset(key: PresetKey) {
     const p = PRESETS.find(pr => pr.key === key)!;
     setSelected(key);
@@ -56,12 +79,13 @@ export default function GoalsScreen({ navigation }: Props) {
   }
 
   async function handleSave() {
+    const preset = PRESETS.find(p => p.key === selected)!;
     const g: UserGoals = {
       preset:   selected,
-      calories: parseInt(calories) || activePreset.goals.calories,
-      protein:  parseInt(protein)  || activePreset.goals.protein,
-      carbs:    parseInt(carbs)    || activePreset.goals.carbs,
-      fat:      parseInt(fat)      || activePreset.goals.fat,
+      calories: parseInt(calories) || preset.goals.calories,
+      protein:  parseInt(protein)  || preset.goals.protein,
+      carbs:    parseInt(carbs)    || preset.goals.carbs,
+      fat:      parseInt(fat)      || preset.goals.fat,
     };
     await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(g));
     setGoals(g);
@@ -91,6 +115,7 @@ export default function GoalsScreen({ navigation }: Props) {
                 <Text style={s.cardEmoji}>{preset.emoji}</Text>
                 <View style={s.cardText}>
                   <Text style={[s.cardLabel, isActive && s.cardLabelActive]}>{preset.label}</Text>
+                  <Text style={s.cardDesc}>{preset.desc}</Text>
                   <Text style={s.cardMacros}>
                     {preset.goals.calories} cal · {preset.goals.protein}g P · {preset.goals.carbs}g C · {preset.goals.fat}g F
                   </Text>
@@ -161,9 +186,10 @@ const s = StyleSheet.create({
   cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
   cardEmoji: { fontSize: 28 },
   cardText: { flex: 1 },
-  cardLabel: { fontSize: 17, fontWeight: '700', color: '#8A8A8A', marginBottom: 4 },
+  cardLabel: { fontSize: 17, fontWeight: '700', color: '#8A8A8A', marginBottom: 2 },
   cardLabelActive: { color: '#FFFFFF' },
-  cardMacros: { fontSize: 12, color: '#555' },
+  cardDesc: { fontSize: 13, color: '#666', marginBottom: 4 },
+  cardMacros: { fontSize: 11, color: '#444' },
   dot: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#00E5A0' },
 
   customizeToggle: { paddingVertical: 14, alignItems: 'center' },

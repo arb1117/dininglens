@@ -2,23 +2,19 @@ require('dotenv').config();
 
 const express = require('express');
 
-// Handle both CJS and ESM-compat exports from @anthropic-ai/sdk
 const AnthropicModule = require('@anthropic-ai/sdk');
 const Anthropic = AnthropicModule.Anthropic ?? AnthropicModule.default ?? AnthropicModule;
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 
-// Fail fast if the key is missing — better error than a silent 401 later
 if (!process.env.ANTHROPIC_API_KEY) {
-  console.error('ERROR: ANTHROPIC_API_KEY is not set. Create a .env file or set the variable in your environment.');
+  console.error('ERROR: ANTHROPIC_API_KEY is not set.');
   process.exit(1);
 }
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Robustly extract the first complete JSON object from model output,
-// handling markdown code fences and any extra text before/after.
 function extractJSON(text) {
   const stripped = text.replace(/```json\n?/g, '').replace(/```\n?/g, '');
   const start = stripped.indexOf('{');
@@ -27,7 +23,15 @@ function extractJSON(text) {
   return JSON.parse(stripped.slice(start, end + 1));
 }
 
-// Fix 3: shared preamble enforcing food-only detection across all prompts
+function extractJSONArray(text) {
+  const stripped = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  const start = stripped.indexOf('[');
+  const end = stripped.lastIndexOf(']');
+  if (start === -1 || end === -1) throw new Error('No JSON array found');
+  return JSON.parse(stripped.slice(start, end + 1));
+}
+
+// Shared: food-only detection rules applied to all prompts
 const FOOD_PREAMBLE = `You are a food and nutrition analysis assistant. Your job is ONLY to identify food and beverages that appear to be part of the meal being photographed.
 
 STRICT RULES:
@@ -37,16 +41,28 @@ STRICT RULES:
 - If you see food AND background objects, only include the food
 - Do not identify people, hands, or body parts as food items`;
 
+// Supplement/packaged product accuracy guidance — added to generic prompts
+const SUPPLEMENT_GUIDANCE = `For supplements, protein powders, fiber supplements, vitamins, and packaged food products:
+- Identify the specific product and brand if visible on the label
+- Use the ACTUAL nutrition label values if you can read the label in the image
+- If you cannot read the label, use well-known database values for that specific product:
+  - Optimum Nutrition Gold Standard Whey (1 scoop 30g): 120 cal, 24g protein, 3g carbs, 1.5g fat
+  - Equate Psyllium Husk (2 tbsp 11g): 35 cal, 0g protein, 9g carbs, 0g fat (note: mostly fiber, minimal net carbs)
+  - Psyllium husk fiber generic (1 tbsp 5g): 17 cal, 0g protein, 4g carbs, 0g fat
+  - Unsweetened almond milk (240ml/8oz): 37 cal, 1g protein, 1g carbs, 3g fat
+  - PHGG / Partially Hydrolyzed Guar Gum (1 serving 5g): 20 cal, 0g protein, 6g carbs, 0g fat
+- For protein powders and supplements, portion size is critical — estimate based on the container/scoop visible`;
+
+// ─── /analyze ────────────────────────────────────────────────────────────────
+
 app.post('/analyze', async (req, res) => {
   console.log('[/analyze] request received');
-
   const { imageBase64, menuItems } = req.body;
 
   if (!imageBase64) {
-    console.error('[/analyze] Missing imageBase64 in request body');
+    console.error('[/analyze] Missing imageBase64');
     return res.status(400).json({ error: 'imageBase64 is required' });
   }
-
   console.log(`[/analyze] imageBase64 length: ${imageBase64.length}, menuItems: ${menuItems?.length ?? 0}`);
 
   let prompt;
@@ -78,8 +94,9 @@ Return ONLY valid JSON in this exact format:
 Portion multiplier: 0.5 = half portion, 1.0 = normal, 1.5 = large, 2.0 = double. Only include items you can actually see.
 Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
   } else {
-    // Fix 2: generic prompt includes reason field instructions for empty results
     prompt = `${FOOD_PREAMBLE}
+
+${SUPPLEMENT_GUIDANCE}
 
 Identify all food items visible in this photo and estimate their calories and macros.
 Return ONLY valid JSON in this exact format:
@@ -112,7 +129,6 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
 
   try {
     console.log('[/analyze] Calling Anthropic API...');
-
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
@@ -120,25 +136,16 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
         {
           role: 'user',
           content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: 'image/jpeg',
-                data: imageBase64,
-              },
-            },
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
             { type: 'text', text: prompt },
           ],
         },
       ],
     });
-
     const raw = response.content[0]?.text ?? '';
     console.log('[/analyze] Raw response:', raw.slice(0, 200));
-
     const parsed = extractJSON(raw);
-    console.log('[/analyze] Parsed successfully, items:', parsed.detectedItems?.length, 'reason:', parsed.reason ?? 'none');
+    console.log('[/analyze] items:', parsed.detectedItems?.length, 'reason:', parsed.reason ?? 'none');
     res.json(parsed);
   } catch (err) {
     console.error('[/analyze] Error:', err);
@@ -146,11 +153,11 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
   }
 });
 
+// ─── /reanalyze ──────────────────────────────────────────────────────────────
+
 app.post('/reanalyze', async (req, res) => {
   console.log('[/reanalyze] request received');
   const { imageBase64, feedback, previousItems, menuItems } = req.body;
-
-  // Fix 1: explicit logging so we can confirm the request body is arriving intact
   console.log(`[/reanalyze] imageBase64 length: ${imageBase64?.length ?? 'MISSING'}, feedback: "${feedback}", previousItems: ${previousItems?.length ?? 0}`);
 
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
@@ -191,6 +198,8 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
   } else {
     prompt = `${FOOD_PREAMBLE}
 
+${SUPPLEMENT_GUIDANCE}
+
 The previous analysis identified: ${previousList}.
 The user says: '${feedback}'.
 
@@ -222,10 +231,7 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
         {
           role: 'user',
           content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 },
-            },
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
             { type: 'text', text: prompt },
           ],
         },
@@ -234,13 +240,53 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
     const raw = response.content[0]?.text ?? '';
     console.log('[/reanalyze] Raw response:', raw.slice(0, 200));
     const parsed = extractJSON(raw);
-    console.log('[/reanalyze] Parsed successfully, items:', parsed.detectedItems?.length);
+    console.log('[/reanalyze] items:', parsed.detectedItems?.length);
     res.json(parsed);
   } catch (err) {
     console.error('[/reanalyze] Error:', err);
     res.status(500).json({ error: err.message ?? String(err) });
   }
 });
+
+// ─── /lookup-nutrition ────────────────────────────────────────────────────────
+
+app.post('/lookup-nutrition', async (req, res) => {
+  console.log('[/lookup-nutrition] request received');
+  const { query } = req.body;
+  if (!query) return res.status(400).json({ error: 'query is required' });
+
+  if (!process.env.NUTRITIONIX_APP_ID || !process.env.NUTRITIONIX_API_KEY) {
+    return res.status(503).json({ error: 'Nutritionix keys not configured — add NUTRITIONIX_APP_ID and NUTRITIONIX_API_KEY to .env' });
+  }
+
+  try {
+    const r = await fetch('https://trackapi.nutritionix.com/v2/natural/nutrients', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-app-id': process.env.NUTRITIONIX_APP_ID,
+        'x-app-key': process.env.NUTRITIONIX_API_KEY,
+      },
+      body: JSON.stringify({ query }),
+    });
+    if (!r.ok) throw new Error(`Nutritionix ${r.status}`);
+    const data = await r.json();
+    const food = data.foods?.[0];
+    if (!food) throw new Error('No results from Nutritionix');
+    res.json({
+      name: food.food_name,
+      calories: food.nf_calories ?? 0,
+      protein: food.nf_protein ?? 0,
+      carbs: food.nf_total_carbohydrate ?? 0,
+      fat: food.nf_total_fat ?? 0,
+    });
+  } catch (err) {
+    console.error('[/lookup-nutrition] Error:', err);
+    res.status(500).json({ error: err.message ?? String(err) });
+  }
+});
+
+// ─── /lookup ─────────────────────────────────────────────────────────────────
 
 app.post('/lookup', async (req, res) => {
   console.log('[/lookup] request received');
@@ -267,10 +313,82 @@ app.post('/lookup', async (req, res) => {
   }
 });
 
+// ─── /search ─────────────────────────────────────────────────────────────────
+
+app.get('/search', async (req, res) => {
+  console.log('[/search] request received');
+  const q = req.query.q;
+  if (!q) return res.status(400).json({ error: 'q is required' });
+  console.log(`[/search] query: "${q}"`);
+
+  // Use Nutritionix instant search if keys are configured
+  if (process.env.NUTRITIONIX_APP_ID && process.env.NUTRITIONIX_API_KEY) {
+    try {
+      const r = await fetch(
+        `https://trackapi.nutritionix.com/v2/search/instant?query=${encodeURIComponent(q)}&branded=true&common=true`,
+        {
+          headers: {
+            'x-app-id': process.env.NUTRITIONIX_APP_ID,
+            'x-app-key': process.env.NUTRITIONIX_API_KEY,
+          },
+        }
+      );
+      if (!r.ok) throw new Error(`Nutritionix ${r.status}`);
+      const data = await r.json();
+      const results = [
+        ...(data.common || []).slice(0, 5).map(i => ({
+          name: i.food_name,
+          serving_size: `${i.serving_qty} ${i.serving_unit}`,
+          calories: i.nf_calories ?? 0,
+          protein: i.nf_protein ?? 0,
+          carbs: i.nf_total_carbohydrate ?? 0,
+          fat: i.nf_total_fat ?? 0,
+        })),
+        ...(data.branded || []).slice(0, 5).map(i => ({
+          name: `${i.brand_name} ${i.food_name}`,
+          serving_size: `${i.serving_qty} ${i.serving_unit}`,
+          calories: i.nf_calories ?? 0,
+          protein: i.nf_protein ?? 0,
+          carbs: i.nf_total_carbohydrate ?? 0,
+          fat: i.nf_total_fat ?? 0,
+        })),
+      ].slice(0, 10);
+      console.log('[/search] Nutritionix results:', results.length);
+      return res.json(results);
+    } catch (err) {
+      console.error('[/search] Nutritionix error, falling back to AI:', err.message);
+    }
+  }
+
+  // Fallback: Claude
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      messages: [
+        {
+          role: 'user',
+          content: `List the top 5 foods matching '${q}' with accurate nutrition per standard serving. Return ONLY a JSON array with no markdown: [{"name":"...","serving_size":"...","calories":0,"protein":0,"carbs":0,"fat":0}]`,
+        },
+      ],
+    });
+    const raw = response.content[0]?.text ?? '';
+    console.log('[/search] AI raw:', raw.slice(0, 300));
+    const parsed = extractJSONArray(raw);
+    res.json(parsed);
+  } catch (err) {
+    console.error('[/search] Error:', err);
+    res.status(500).json({ error: err.message ?? String(err) });
+  }
+});
+
+// ─── /health ─────────────────────────────────────────────────────────────────
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`DiningLens proxy running on :${PORT}`);
-  console.log(`ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'present' : 'MISSING — server will fail'}`);
+  console.log(`ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'present' : 'MISSING'}`);
+  console.log(`NUTRITIONIX: ${process.env.NUTRITIONIX_APP_ID ? 'configured' : 'not configured (using AI fallback)'}`);
 });

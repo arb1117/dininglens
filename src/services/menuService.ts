@@ -11,7 +11,9 @@ export type MenuItem = {
 
 /** Map of venue names → dineoncampus location IDs. Add new schools here. */
 export const KNOWN_LOCATIONS: Record<string, string> = {
-  'Duncan Dining Hall': '5878eb5cee596f847636f114',
+  'Duncan Dining Hall':      '5878eb5cee596f847636f114',
+  'Sbisa Dining Hall':       '587909deee596f31cedc179c',
+  'The Commons Dining Hall': '59972586ee596fe55d2eef75',
 };
 
 export const FAKE_MENU: MenuItem[] = [

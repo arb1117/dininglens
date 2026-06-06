@@ -120,7 +120,7 @@ export default function CameraScreen({ navigation }: Props) {
               <Text style={styles.venueBannerText} numberOfLines={1}>
                 {'📍 '}
                 <Text style={styles.venueBannerName}>{venue.name}</Text>
-                {` — ${periodLabel}`}
+                {venue.type === 'restaurant' ? ' — Restaurant menu loaded' : ` — ${periodLabel} menu loaded`}
               </Text>
               <TouchableOpacity onPress={disableDiningHallMode} style={styles.venueBannerDismiss}>
                 <Text style={styles.venueBannerDismissText}>✕</Text>

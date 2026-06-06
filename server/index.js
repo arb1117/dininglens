@@ -121,6 +121,96 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
   }
 });
 
+app.post('/reanalyze', async (req, res) => {
+  console.log('[/reanalyze] request received');
+  const { imageBase64, feedback, previousItems, menuItems } = req.body;
+
+  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
+  if (!feedback)    return res.status(400).json({ error: 'feedback is required' });
+
+  const previousList = Array.isArray(previousItems) && previousItems.length > 0
+    ? previousItems.map(i => i.name).join(', ')
+    : '(none identified)';
+
+  let prompt;
+  if (menuItems && menuItems.length > 0) {
+    const menuList = menuItems
+      .map(i => `- ${i.name}: ${i.calories} cal, ${i.protein}g protein, ${i.carbs}g carbs, ${i.fat}g fat`)
+      .join('\n');
+    prompt = `You are a nutrition analysis assistant. The user has photographed their meal at a dining hall.
+
+The following items are currently on the menu:
+${menuList}
+
+The previous analysis identified: ${previousList}.
+The user says: '${feedback}'.
+
+Re-analyze the image with this correction in mind and return an updated result.
+Return ONLY valid JSON in this exact format:
+{
+  "detectedItems": [
+    {
+      "name": "item name exactly as listed above",
+      "portionMultiplier": 1.0,
+      "confidence": 0.9
+    }
+  ],
+  "mode": "dining_hall"
+}
+Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
+  } else {
+    prompt = `You are a nutrition analysis assistant.
+
+The previous analysis identified: ${previousList}.
+The user says: '${feedback}'.
+
+Re-analyze the image with this correction in mind and return an updated result.
+Return ONLY valid JSON in this exact format:
+{
+  "detectedItems": [
+    {
+      "name": "food name",
+      "calories": 300,
+      "protein": 25,
+      "carbs": 20,
+      "fat": 8,
+      "portionMultiplier": 1.0,
+      "confidence": 0.85
+    }
+  ],
+  "mode": "generic"
+}
+Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
+  }
+
+  try {
+    console.log('[/reanalyze] Calling Anthropic API...');
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 },
+            },
+            { type: 'text', text: prompt },
+          ],
+        },
+      ],
+    });
+    const raw = response.content[0]?.text ?? '';
+    console.log('[/reanalyze] Raw response:', raw.slice(0, 200));
+    const parsed = extractJSON(raw);
+    res.json(parsed);
+  } catch (err) {
+    console.error('[/reanalyze] Error:', err);
+    res.status(500).json({ error: err.message ?? String(err) });
+  }
+});
+
 app.post('/lookup', async (req, res) => {
   console.log('[/lookup] request received');
   const { query } = req.body;

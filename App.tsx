@@ -14,7 +14,7 @@ import { AnalysisResult } from './src/services/visionService';
 export type RootStackParamList = {
   Onboarding: undefined;
   Camera: undefined;
-  Estimate: { analysisResult?: AnalysisResult };
+  Estimate: { analysisResult?: AnalysisResult; imageBase64?: string };
   History: undefined;
 };
 

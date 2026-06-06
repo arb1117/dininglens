@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   Modal, TextInput, ActivityIndicator, FlatList,
@@ -9,6 +9,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem } from '../context/MealContext';
 import { MenuItem } from '../services/menuService';
+import { AnalysisResult } from '../services/visionService';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
 
@@ -97,7 +98,7 @@ function buildInitialItems(
 
 export default function EstimateScreen({ navigation, route }: Props) {
   const { addMeal, menuItems, venue } = useMealContext();
-  const { analysisResult } = route.params;
+  const { analysisResult, imageBase64 } = route.params;
 
   const [items, setItems] = useState<NormalizedItem[]>(() =>
     buildInitialItems(analysisResult, menuItems)
@@ -111,12 +112,30 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
 
+  // Add-item modal state
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
 
+  // Re-evaluate state
+  const [feedbackText, setFeedbackText] = useState('');
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
+  const [hasReanalyzed, setHasReanalyzed] = useState(false);
+
   const isDiningHallMode = venue !== null;
+
+  // Custom header back button — returns to Camera without logging
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <TouchableOpacity onPress={() => navigation.pop()} style={styles.headerBack}>
+          <Text style={styles.headerBackText}>← Back</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   const filteredMenuItems = useMemo(() =>
     searchQuery.trim()
@@ -203,6 +222,35 @@ export default function EstimateScreen({ navigation, route }: Props) {
     setSearchQuery('');
   }
 
+  async function handleReanalyze() {
+    if (!feedbackText.trim() || !imageBase64) return;
+    setReanalyzing(true);
+    setReanalyzeError(null);
+    try {
+      const res = await fetch(`${SERVER_URL}/reanalyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64,
+          feedback: feedbackText.trim(),
+          previousItems: items.map(i => ({ name: i.name })),
+          menuItems: isDiningHallMode ? menuItems : undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const newResult = await res.json() as AnalysisResult;
+      const newItems = buildInitialItems(newResult, menuItems);
+      setItems(newItems);
+      setPortions(Object.fromEntries(newItems.map(i => [i.id, i.initialPortion])));
+      setFeedbackText('');
+      setHasReanalyzed(true);
+    } catch {
+      setReanalyzeError('Re-evaluate failed — check your connection and try again.');
+    } finally {
+      setReanalyzing(false);
+    }
+  }
+
   const totals = useMemo(() =>
     items.reduce(
       (acc, item) => {
@@ -227,10 +275,10 @@ export default function EstimateScreen({ navigation, route }: Props) {
       return { name: item.name, portion, ...scaled };
     });
     addMeal({ id: String(Date.now()), timestamp: new Date().toLocaleString(), items: mealItems, totals });
-    navigation.navigate('Camera');
+    navigation.pop();
   }
 
-  const isFallback = !analysisResult || analysisResult.detectedItems.length === 0;
+  const isFallback = !hasReanalyzed && (!analysisResult || analysisResult.detectedItems.length === 0);
 
   return (
     <>
@@ -323,6 +371,37 @@ export default function EstimateScreen({ navigation, route }: Props) {
           })
         )}
 
+        {/* AI feedback / re-evaluate row — only shown when we have an image to reanalyze */}
+        {imageBase64 && (
+          <View style={styles.feedbackSection}>
+            <Text style={styles.feedbackLabel}>Correct the AI</Text>
+            <View style={styles.feedbackRow}>
+              <TextInput
+                style={styles.feedbackInput}
+                placeholder="Tell the AI what's wrong… (e.g. 'those are bananas not rice')"
+                placeholderTextColor="#555"
+                value={feedbackText}
+                onChangeText={text => { setFeedbackText(text); setReanalyzeError(null); }}
+                multiline
+                returnKeyType="default"
+              />
+              <TouchableOpacity
+                style={[styles.reanalyzeBtn, (!feedbackText.trim() || reanalyzing) && styles.reanalyzeBtnDisabled]}
+                onPress={handleReanalyze}
+                disabled={!feedbackText.trim() || reanalyzing}
+              >
+                {reanalyzing
+                  ? <ActivityIndicator color="#0F0F0F" size="small" />
+                  : <Text style={styles.reanalyzeBtnText}>Re-evaluate</Text>
+                }
+              </TouchableOpacity>
+            </View>
+            {reanalyzeError !== null && (
+              <Text style={styles.reanalyzeError}>{reanalyzeError}</Text>
+            )}
+          </View>
+        )}
+
         <TouchableOpacity style={styles.addItemBtn} onPress={openAddModal}>
           <Text style={styles.addItemBtnText}>+ Add item</Text>
         </TouchableOpacity>
@@ -378,7 +457,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
               placeholderTextColor="#999"
               value={searchQuery}
               onChangeText={setSearchQuery}
-              returnKeyType={isDiningHallMode ? 'search' : 'search'}
+              returnKeyType="search"
               onSubmitEditing={isDiningHallMode ? undefined : handleLookup}
               autoFocus
             />
@@ -389,7 +468,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
                 disabled={lookupLoading}
               >
                 {lookupLoading
-                  ? <ActivityIndicator color="#fff" size="small" />
+                  ? <ActivityIndicator color="#0F0F0F" size="small" />
                   : <Text style={styles.searchBtnText}>Search</Text>
                 }
               </TouchableOpacity>
@@ -424,6 +503,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F0F0F' },
   content: { padding: 20, paddingBottom: 40 },
   header: { fontSize: 22, fontWeight: '800', color: '#FFFFFF', marginBottom: 12, marginTop: 8 },
+
+  headerBack: { paddingRight: 16, paddingVertical: 4 },
+  headerBackText: { color: '#FFFFFF', fontSize: 16 },
 
   venueCard: {
     backgroundColor: '#1A1A1A', borderRadius: 10, paddingVertical: 10,
@@ -488,6 +570,28 @@ const styles = StyleSheet.create({
     alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#2A2A2A',
   },
   emptyText: { fontSize: 14, color: '#8A8A8A', fontStyle: 'italic' },
+
+  // Feedback / re-evaluate
+  feedbackSection: {
+    marginBottom: 16,
+  },
+  feedbackLabel: {
+    fontSize: 12, fontWeight: '600', color: '#8A8A8A',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8,
+  },
+  feedbackRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  feedbackInput: {
+    flex: 1, backgroundColor: '#1A1A1A', borderRadius: 10, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 14, color: '#FFFFFF',
+    borderWidth: 1, borderColor: '#2A2A2A', minHeight: 44,
+  },
+  reanalyzeBtn: {
+    backgroundColor: '#00E5A0', borderRadius: 10, paddingHorizontal: 14,
+    paddingVertical: 10, alignItems: 'center', justifyContent: 'center', minWidth: 96,
+  },
+  reanalyzeBtnDisabled: { opacity: 0.4 },
+  reanalyzeBtnText: { color: '#0F0F0F', fontWeight: '700', fontSize: 14 },
+  reanalyzeError: { color: '#FF4444', fontSize: 12, marginTop: 6 },
 
   addItemBtn: {
     borderRadius: 10, paddingVertical: 12, alignItems: 'center',

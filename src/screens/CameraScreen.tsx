@@ -64,6 +64,7 @@ export default function CameraScreen({ navigation }: Props) {
     if (!cameraRef.current || analyzing) return;
     setAnalyzing(true);
     setErrorBanner(null);
+    let imageBase64: string | undefined;
     try {
       const photo = await cameraRef.current.takePictureAsync({
         base64: true,
@@ -72,17 +73,18 @@ export default function CameraScreen({ navigation }: Props) {
       });
 
       if (!photo?.base64) throw new Error('No image data');
+      imageBase64 = photo.base64;
 
       const result = await analyzeImage(
         photo.base64,
         isDiningHallMode ? menuItems : undefined
       );
 
-      navigation.navigate('Estimate', { analysisResult: result });
+      navigation.navigate('Estimate', { analysisResult: result, imageBase64 });
     } catch (err) {
       console.error('Shutter error:', err);
       setErrorBanner('Estimate unavailable — using defaults');
-      navigation.navigate('Estimate', { analysisResult: undefined });
+      navigation.navigate('Estimate', { analysisResult: undefined, imageBase64 });
     } finally {
       setAnalyzing(false);
     }

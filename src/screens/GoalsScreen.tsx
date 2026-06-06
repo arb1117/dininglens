@@ -89,7 +89,7 @@ export default function GoalsScreen({ navigation }: Props) {
     };
     await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(g));
     setGoals(g);
-    navigation.navigate('Camera');
+    navigation.navigate('MainTabs');
   }
 
   return (

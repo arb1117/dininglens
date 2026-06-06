@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { KNOWN_VENUES, detectVenue } from '../services/venueService';
 import { fetchMenu } from '../services/menuService';
@@ -18,12 +19,12 @@ import { useMealContext } from '../context/MealContext';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
 
-type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Camera'> };
+type Props = NativeStackScreenProps<RootStackParamList, 'Camera'>;
 
 type DiningHallStatus = 'inactive' | 'loading' | 'active';
 type ScanMode = 'photo' | 'barcode';
 
-export default function CameraScreen({ navigation }: Props) {
+export default function CameraScreen({ navigation, route }: Props) {
   const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems, mealLog, goals } =
     useMealContext();
 
@@ -32,7 +33,9 @@ export default function CameraScreen({ navigation }: Props) {
   const [analyzing, setAnalyzing] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [torch, setTorch] = useState(false);
-  const [scanMode, setScanMode] = useState<ScanMode>('photo');
+  const [scanMode, setScanMode] = useState<ScanMode>(
+    route.params?.initialMode === 'barcode' ? 'barcode' : 'photo'
+  );
   const [barcodeScanning, setBarcodeScanning] = useState(false);
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
   const [showStreakModal, setShowStreakModal] = useState(false);
@@ -83,7 +86,16 @@ export default function CameraScreen({ navigation }: Props) {
       : String(n);
   }
 
+  // Auto-enable dining hall mode when launched from Add sheet with 'dining' action
   useEffect(() => {
+    if (route.params?.initialMode === 'dining') {
+      enableDiningHallModeForVenue();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (route.params?.initialMode === 'dining') return; // handled above
     detectVenue().then(detected => {
       if (!detected || diningHallStatus !== 'inactive') return;
 

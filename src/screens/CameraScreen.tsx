@@ -27,6 +27,7 @@ export default function CameraScreen({ navigation }: Props) {
   const [diningHallStatus, setDiningHallStatus] = useState<DiningHallStatus>('inactive');
   const [analyzing, setAnalyzing] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [torch, setTorch] = useState(false);
 
   const cameraRef = useRef<CameraView>(null);
 
@@ -111,7 +112,7 @@ export default function CameraScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={styles.camera} facing="back">
+      <CameraView ref={cameraRef} style={styles.camera} facing="back" enableTorch={torch}>
 
         {/* Active venue banner — slim top bar with teal background */}
         {diningHallStatus === 'active' && venue && (
@@ -155,6 +156,14 @@ export default function CameraScreen({ navigation }: Props) {
             <Text style={styles.analyzingText}>Analyzing meal...</Text>
           </View>
         )}
+
+        {/* Torch toggle — top-right */}
+        <TouchableOpacity
+          style={[styles.torchButton, torch && styles.torchButtonOn]}
+          onPress={() => setTorch(t => !t)}
+        >
+          <Text style={styles.torchButtonText}>🔦</Text>
+        </TouchableOpacity>
 
         {/* Shutter — centered, 80px from bottom */}
         <View style={styles.shutterContainer} pointerEvents="box-none">
@@ -284,6 +293,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   historyButtonText: { fontSize: 22 },
+
+  // Torch button — top-right
+  torchButton: {
+    position: 'absolute',
+    right: 20,
+    top: 60,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  torchButtonOn: { backgroundColor: 'rgba(255,255,255,0.9)' },
+  torchButtonText: { fontSize: 22 },
 
   // Permission screen
   permissionScreen: {

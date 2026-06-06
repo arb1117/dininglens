@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.101.0",
     "@react-navigation/native": "^7.2.5",
     "@react-navigation/native-stack": "^7.16.0",
     "expo": "^54.0.0",
+    "expo-camera": "~17.0.10",
     "expo-status-bar": "~3.0.9",
+    "express": "^5.2.1",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-safe-area-context": "~5.6.0",
@@ -20,7 +23,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "server": "node server/index.js"
   },
   "private": true
 }

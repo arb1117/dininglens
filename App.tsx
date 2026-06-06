@@ -8,11 +8,12 @@ import OnboardingScreen from './src/screens/OnboardingScreen';
 import CameraScreen from './src/screens/CameraScreen';
 import EstimateScreen from './src/screens/EstimateScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
+import { AnalysisResult } from './src/services/visionService';
 
 export type RootStackParamList = {
   Onboarding: undefined;
   Camera: undefined;
-  Estimate: undefined;
+  Estimate: { analysisResult?: AnalysisResult };
   History: undefined;
 };
 
@@ -39,11 +40,7 @@ export default function App() {
           <Stack.Screen
             name="Camera"
             component={CameraScreen}
-            options={{
-              title: 'DiningLens',
-              headerBackVisible: false,
-              gestureEnabled: false,
-            }}
+            options={{ headerShown: false }}
           />
           <Stack.Screen
             name="Estimate"

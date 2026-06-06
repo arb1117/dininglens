@@ -17,13 +17,14 @@ if (!process.env.ANTHROPIC_API_KEY) {
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Strip markdown code fences in case the model wraps JSON in ```json ... ```
+// Robustly extract the first complete JSON object from model output,
+// handling markdown code fences and any extra text before/after.
 function extractJSON(text) {
-  return text
-    .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/, '');
+  const stripped = text.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+  const start = stripped.indexOf('{');
+  const end = stripped.lastIndexOf('}');
+  if (start === -1 || end === -1) throw new Error('No JSON found in response');
+  return JSON.parse(stripped.slice(start, end + 1));
 }
 
 app.post('/analyze', async (req, res) => {
@@ -62,7 +63,8 @@ Return ONLY valid JSON in this exact format:
   ],
   "mode": "dining_hall"
 }
-Portion multiplier: 0.5 = half portion, 1.0 = normal, 1.5 = large, 2.0 = double. Only include items you can actually see.`;
+Portion multiplier: 0.5 = half portion, 1.0 = normal, 1.5 = large, 2.0 = double. Only include items you can actually see.
+Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
   } else {
     prompt = `You are a nutrition analysis assistant. Identify all food items visible in this photo and estimate their calories and macros.
 Return ONLY valid JSON in this exact format:
@@ -79,7 +81,8 @@ Return ONLY valid JSON in this exact format:
     }
   ],
   "mode": "generic"
-}`;
+}
+Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
   }
 
   try {
@@ -109,7 +112,7 @@ Return ONLY valid JSON in this exact format:
     const raw = response.content[0]?.text ?? '';
     console.log('[/analyze] Raw response:', raw.slice(0, 200));
 
-    const parsed = JSON.parse(extractJSON(raw));
+    const parsed = extractJSON(raw);
     console.log('[/analyze] Parsed successfully, items:', parsed.detectedItems?.length);
     res.json(parsed);
   } catch (err) {

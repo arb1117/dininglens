@@ -401,6 +401,120 @@ app.get('/search', async (req, res) => {
 
 // ─── /health ─────────────────────────────────────────────────────────────────
 
+// ─── /detect-restaurant ──────────────────────────────────────────────────────
+// Proxies Google Places Nearby Search + Details so the API key stays server-side
+
+app.post('/detect-restaurant', async (req, res) => {
+  console.log('[/detect-restaurant] request received');
+  const { lat, lon } = req.body;
+  if (lat == null || lon == null) return res.status(400).json({ error: 'lat and lon required' });
+
+  const key = process.env.GOOGLE_PLACES_API_KEY;
+  if (!key) return res.status(503).json({ error: 'GOOGLE_PLACES_API_KEY not configured' });
+
+  try {
+    // Step 1: Nearby Search — 100m radius, type=restaurant
+    const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lon}&radius=100&type=restaurant&key=${key}`;
+    const nearbyRes = await fetch(nearbyUrl);
+    const nearbyData = await nearbyRes.json();
+    console.log('[/detect-restaurant] Places status:', nearbyData.status, 'results:', nearbyData.results?.length ?? 0);
+
+    if (!nearbyData.results?.length) return res.json(null);
+
+    const place = nearbyData.results[0];
+    const placeId = place.place_id;
+    const name = place.name;
+
+    // Step 2: Place Details to get website (needed for mom-and-pop scrape)
+    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=website&key=${key}`;
+    const detailsRes = await fetch(detailsUrl);
+    const detailsData = await detailsRes.json();
+    const website = detailsData.result?.website ?? null;
+
+    console.log(`[/detect-restaurant] Found: "${name}" placeId=${placeId} website=${website ?? 'none'}`);
+    return res.json({ placeId, name, website });
+  } catch (err) {
+    console.error('[/detect-restaurant] Error:', err.message);
+    res.status(500).json({ error: err.message ?? String(err) });
+  }
+});
+
+// ─── /scrape-menu ─────────────────────────────────────────────────────────────
+// Fetches a restaurant website, extracts text, and uses Claude to parse the menu.
+// Results are cached in memory by placeId.
+
+const scrapeCache = new Map(); // placeId → { items, cachedAt }
+const SCRAPE_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+app.post('/scrape-menu', async (req, res) => {
+  console.log('[/scrape-menu] request received');
+  const { website, restaurantName, placeId } = req.body;
+  if (!website || !restaurantName) return res.status(400).json({ error: 'website and restaurantName required' });
+
+  // Check cache
+  if (placeId) {
+    const cached = scrapeCache.get(placeId);
+    if (cached && Date.now() - cached.cachedAt < SCRAPE_CACHE_TTL_MS) {
+      console.log(`[/scrape-menu] cache hit for placeId=${placeId}`);
+      return res.json({ items: cached.items, source: 'cache' });
+    }
+  }
+
+  try {
+    // Fetch the website HTML (best-effort; JS-rendered sites will return minimal content)
+    const pageRes = await fetch(website, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DiningLens/1.0)' },
+      signal: AbortSignal.timeout(8000),
+    });
+    const html = await pageRes.text();
+
+    // Strip HTML tags and collapse whitespace for cleaner Claude input
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 8000); // cap to avoid token overrun
+
+    console.log(`[/scrape-menu] fetched ${text.length} chars from ${website}`);
+
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [
+        {
+          role: 'user',
+          content: `This is the menu/website text for ${restaurantName}. Extract all food items with estimated calories and macros. Return ONLY a JSON array with no markdown: [{"name":"...","calories":0,"protein":0,"carbs":0,"fat":0,"serving_size":"..."}]. Estimate macros based on typical restaurant preparation if exact values are not listed. If no menu items can be found, return [].`,
+        },
+        {
+          role: 'assistant',
+          content: `Here is the website content:\n${text}\n\nExtracted menu items:`,
+        },
+      ],
+    });
+
+    const raw = response.content[0]?.text ?? '';
+    console.log('[/scrape-menu] Claude raw:', raw.slice(0, 300));
+    let items = [];
+    try {
+      items = extractJSONArray(raw);
+    } catch {
+      items = [];
+    }
+
+    console.log(`[/scrape-menu] extracted ${items.length} items`);
+
+    // Cache the result
+    if (placeId) scrapeCache.set(placeId, { items, cachedAt: Date.now() });
+
+    res.json({ items, source: 'scrape' });
+  } catch (err) {
+    console.error('[/scrape-menu] Error:', err.message);
+    res.status(500).json({ error: err.message ?? String(err) });
+  }
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3001;

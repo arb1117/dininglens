@@ -8,6 +8,8 @@ export type Venue = {
   locationId: string;
   provider: 'dineoncampus' | 'generic';
   coords: { lat: number; lon: number };
+  // Pre-fetched menu items for restaurant venues (chain lookup or scrape result)
+  menuItems?: Array<{ id: string; name: string; calories: number; protein: number; carbs: number; fat: number }>;
 };
 
 const RADIUS_KM = 0.25;
@@ -69,7 +71,7 @@ export async function detectVenue(): Promise<Venue | null> {
     }
   }
 
-  // Check for a nearby restaurant (stub always returns null — geolocation needs a paid API)
+  // Check for a nearby restaurant via Google Places (requires GOOGLE_PLACES_API_KEY on server)
   try {
     const { detectNearbyRestaurant } = await import('./restaurantService');
     const restaurant = await detectNearbyRestaurant(userCoords);
@@ -82,6 +84,7 @@ export async function detectVenue(): Promise<Venue | null> {
         locationId: restaurant.id,
         provider: 'generic',
         coords: userCoords,
+        menuItems: restaurant.menuItems,
       };
     }
   } catch {

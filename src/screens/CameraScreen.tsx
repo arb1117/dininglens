@@ -61,9 +61,18 @@ export default function CameraScreen({ navigation }: Props) {
 
   useEffect(() => {
     detectVenue().then(detected => {
-      if (detected && diningHallStatus === 'inactive') {
+      if (!detected || diningHallStatus !== 'inactive') return;
+
+      if (detected.type === 'restaurant' && detected.menuItems?.length) {
+        // Restaurant with a known menu — load directly without a dineoncampus fetch
+        setVenue(detected);
+        setMenuItems(detected.menuItems);
+        setPeriodLabel('Menu');
+        setDiningHallStatus('active');
+      } else if (detected.type === 'dining_hall') {
         enableDiningHallModeForVenue(detected);
       }
+      // Restaurant with no menu → stay in generic mode (no banner)
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

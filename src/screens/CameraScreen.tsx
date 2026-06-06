@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,7 +20,7 @@ type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Camera
 type DiningHallStatus = 'inactive' | 'loading' | 'active';
 
 export default function CameraScreen({ navigation }: Props) {
-  const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems } =
+  const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems, mealLog } =
     useMealContext();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -32,6 +32,32 @@ export default function CameraScreen({ navigation }: Props) {
   const cameraRef = useRef<CameraView>(null);
 
   const isDiningHallMode = diningHallStatus === 'active';
+
+  const DAILY_GOAL_CAL = 2500;
+
+  const todayTotals = useMemo(() => {
+    const today = new Date().toDateString();
+    return mealLog
+      .filter(m => new Date(m.timestamp).toDateString() === today)
+      .reduce(
+        (acc, meal) => ({
+          cal:     Math.round(acc.cal     + meal.totals.cal),
+          protein: Math.round((acc.protein + meal.totals.protein) * 10) / 10,
+          carbs:   Math.round((acc.carbs   + meal.totals.carbs)   * 10) / 10,
+          fat:     Math.round((acc.fat     + meal.totals.fat)     * 10) / 10,
+        }),
+        { cal: 0, protein: 0, carbs: 0, fat: 0 }
+      );
+  }, [mealLog]);
+
+  const calProgress = Math.min(todayTotals.cal / DAILY_GOAL_CAL, 1);
+  const calOver = todayTotals.cal > DAILY_GOAL_CAL;
+
+  function formatCal(n: number): string {
+    return n >= 1000
+      ? `${Math.floor(n / 1000)},${String(n % 1000).padStart(3, '0')}`
+      : String(n);
+  }
 
   useEffect(() => {
     detectVenue().then(detected => {
@@ -202,6 +228,34 @@ export default function CameraScreen({ navigation }: Props) {
           <Text style={styles.historyButtonText}>📋</Text>
         </TouchableOpacity>
 
+        {/* Daily macro summary bar */}
+        <TouchableOpacity
+          style={styles.summaryBar}
+          onPress={() => navigation.navigate('History')}
+          activeOpacity={0.8}
+        >
+          {todayTotals.cal === 0 ? (
+            <Text style={styles.summaryEmpty}>0 cal  ·  Start logging</Text>
+          ) : (
+            <View style={styles.summaryMacros}>
+              <Text style={styles.summaryChip}>{formatCal(todayTotals.cal)} cal</Text>
+              <Text style={styles.summarySep}>·</Text>
+              <Text style={styles.summaryChip}>{todayTotals.protein}g P</Text>
+              <Text style={styles.summarySep}>·</Text>
+              <Text style={styles.summaryChip}>{todayTotals.carbs}g C</Text>
+              <Text style={styles.summarySep}>·</Text>
+              <Text style={styles.summaryChip}>{todayTotals.fat}g F</Text>
+            </View>
+          )}
+          <View style={styles.progressTrack}>
+            <View style={[
+              styles.progressFill,
+              { width: `${calProgress * 100}%` as any },
+              calOver && styles.progressFillOver,
+            ]} />
+          </View>
+        </TouchableOpacity>
+
       </CameraView>
     </View>
   );
@@ -250,10 +304,10 @@ const styles = StyleSheet.create({
   },
   analyzingText: { color: '#fff', fontSize: 17, fontWeight: '600' },
 
-  // Shutter — full-width container at bottom: 80 so button self-centers
+  // Shutter — full-width container at bottom: 90 so button self-centers (bumped 10px for summary bar)
   shutterContainer: {
     position: 'absolute',
-    bottom: 80,
+    bottom: 90,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -280,7 +334,7 @@ const styles = StyleSheet.create({
   searchButton: {
     position: 'absolute',
     left: 20,
-    bottom: 155,
+    bottom: 165,
     width: 48,
     height: 48,
     borderRadius: 24,
@@ -294,7 +348,7 @@ const styles = StyleSheet.create({
   venueChip: {
     position: 'absolute',
     left: 20,
-    bottom: 100,
+    bottom: 110,
     backgroundColor: 'rgba(0,0,0,0.6)',
     borderRadius: 20,
     paddingVertical: 6,
@@ -306,7 +360,7 @@ const styles = StyleSheet.create({
   historyButton: {
     position: 'absolute',
     right: 20,
-    bottom: 100,
+    bottom: 110,
     width: 48,
     height: 48,
     borderRadius: 24,
@@ -315,6 +369,54 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   historyButtonText: { fontSize: 22 },
+
+  // Daily macro summary bar — bottom of screen, above shutter
+  summaryBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 18,
+  },
+  summaryMacros: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  summaryChip: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  summarySep: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.35)',
+  },
+  summaryEmpty: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  progressTrack: {
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 3,
+    backgroundColor: '#00E5A0',
+    borderRadius: 2,
+  },
+  progressFillOver: {
+    backgroundColor: '#FF9500',
+  },
 
   // Torch button — top-right
   torchButton: {

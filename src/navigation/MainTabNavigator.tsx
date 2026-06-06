@@ -20,8 +20,6 @@ const ACTION_ITEMS: { icon: string; label: string; action: string }[] = [
   { icon: '📷', label: 'Scan Meal',     action: 'scan'    },
   { icon: '🖼',  label: 'Upload Photo',  action: 'upload'  },
   { icon: '🔍', label: 'Search Foods',  action: 'search'  },
-  { icon: '📦', label: 'Scan Barcode',  action: 'barcode' },
-  { icon: '🍽',  label: 'Dining Hall',   action: 'dining'  },
   { icon: '🤖', label: 'Ask AI',        action: 'ai'      },
 ];
 

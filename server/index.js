@@ -753,6 +753,37 @@ app.post('/calculate-tdee', async (req, res) => {
   res.json({ bmr: Math.round(bmr), tdee, multiplier, explanation, calories, protein, carbs, fat });
 });
 
+// ─── /interpret-quantity ─────────────────────────────────────────────────────
+
+app.post('/interpret-quantity', async (req, res) => {
+  const { foodName, description, servingSize, caloriesPerServing } = req.body;
+  if (!foodName || !description) {
+    return res.status(400).json({ error: 'foodName and description required' });
+  }
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 150,
+      messages: [{
+        role: 'user',
+        content: `How much food did the user eat?
+Food: "${foodName}" (standard serving: ${servingSize || '1 serving'} = ${caloriesPerServing || '?'} cal)
+User says they had: "${description}"
+Estimate the quantity as servings AND grams. Return ONLY JSON:
+{"estimatedGrams": <number>, "servings": <number>, "explanation": "<one short sentence like 'About 180g — a generous bowl'>"}`,
+      }],
+    });
+    const parsed = extractJSON(response.content[0]?.text ?? '{}');
+    res.json({
+      estimatedGrams: Math.round(parsed.estimatedGrams ?? 100),
+      servings:       Math.round((parsed.servings ?? 1) * 10) / 10,
+      explanation:    parsed.explanation ?? '',
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3001;

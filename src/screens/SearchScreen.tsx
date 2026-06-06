@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { useMealContext, MacroItem, MealPeriod } from '../context/MealContext';
+import { useMealContext, MacroItem, MealPeriod, autoDetectPeriod } from '../context/MealContext';
 import { detectVenue, Venue } from '../services/venueService';
 import { fetchVenueMenu, MenuItem } from '../services/menuService';
 
@@ -86,8 +86,22 @@ export default function SearchScreen({ navigation, route }: Props) {
   const [loading, setLoading]       = useState(false);
   const [filter, setFilter]         = useState<FilterKey>('all');
   const [sheet, setSheet]           = useState<SheetState | null>(null);
-  const [servings, setServings]     = useState(1.0);
   const [toastName, setToastName]   = useState<string | null>(null);
+
+  // Serving UI
+  const [servingMode, setServingMode]   = useState<'structured' | 'natural'>('structured');
+  const [amount, setAmount]             = useState('1');
+  const [unit, setUnit]                 = useState('serving');
+  const [showUnitPicker, setShowUnitPicker] = useState(false);
+  const [nlInput, setNlInput]           = useState('');
+  const [nlLoading, setNlLoading]       = useState(false);
+  const [nlExplanation, setNlExplanation] = useState<string | null>(null);
+
+  // Period picker
+  const [pickedPeriod, setPickedPeriod] = useState<MealPeriod>(
+    selectedPeriod ?? autoDetectPeriod()
+  );
+  const periodLocked = !!selectedPeriod;
 
   // Build My Foods index from mealLog
   const myFoods = useMemo(() => {
@@ -210,10 +224,15 @@ export default function SearchScreen({ navigation, route }: Props) {
         baseFat:     existingItem.fat,
         servingSize: existingItem.portion,
       });
-      setServings(1.0);
+      setAmount('1'); setUnit('serving'); setServingMode('structured'); setNlInput(''); setNlExplanation(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function resetServingState() {
+    setAmount('1'); setUnit('serving'); setServingMode('structured');
+    setNlInput(''); setNlExplanation(null);
+  }
 
   function openSheet(item: DisplayResult) {
     Keyboard.dismiss();
@@ -225,7 +244,7 @@ export default function SearchScreen({ navigation, route }: Props) {
       baseFat:     item.fat,
       servingSize: item.serving_size,
     });
-    setServings(1.0);
+    resetServingState();
   }
 
   function openNearbySheet(item: MenuItem) {
@@ -238,25 +257,101 @@ export default function SearchScreen({ navigation, route }: Props) {
       baseFat:     item.fat,
       servingSize: '1 serving',
     });
-    setServings(1.0);
+    resetServingState();
   }
 
-  function stepServings(delta: number) {
-    setServings(prev => {
-      const next = Math.round((prev + delta) * 2) / 2;
-      return Math.min(10, Math.max(0.5, next));
-    });
+  // ── Serving helpers ────────────────────────────────────────────────────────
+
+  function parseGramWeight(servingSize: string): number | null {
+    const gm = servingSize.match(/(\d+\.?\d*)\s*g\b/i);
+    if (gm) return parseFloat(gm[1]);
+    const oz = servingSize.match(/(\d+\.?\d*)\s*oz\b/i);
+    if (oz) return parseFloat(oz[1]) * 28.35;
+    return null;
   }
+
+  function parseMlVolume(servingSize: string): number | null {
+    const ml = servingSize.match(/(\d+\.?\d*)\s*(ml|mL)/);
+    if (ml) return parseFloat(ml[1]);
+    const floz = servingSize.match(/(\d+\.?\d*)\s*fl\.?\s*oz/i);
+    if (floz) return parseFloat(floz[1]) * 29.57;
+    return null;
+  }
+
+  function getUnitOptions(servingSize: string): string[] {
+    const gw = parseGramWeight(servingSize);
+    const ml = parseMlVolume(servingSize);
+    const opts = ['serving'];
+    if (gw) opts.push('g', 'oz', 'cup', 'tbsp', 'tsp');
+    else if (ml) opts.push('ml', 'fl oz', 'cup', 'tbsp', 'tsp');
+    opts.push('piece', 'slice', 'scoop');
+    return opts;
+  }
+
+  function computeServingMultiplier(n: number, u: string, gw: number | null, ml: number | null): number {
+    if (n <= 0) return 0;
+    switch (u) {
+      case 'g':    return gw ? n / gw : n;
+      case 'oz':   return gw ? (n * 28.35) / gw : n;
+      case 'ml':   return ml ? n / ml : n;
+      case 'fl oz': return ml ? (n * 29.57) / ml : n;
+      case 'cup':  return gw ? (n * 240) / gw : ml ? (n * 240) / ml : n;
+      case 'tbsp': return gw ? (n * 15)  / gw : ml ? (n * 15)  / ml : n;
+      case 'tsp':  return gw ? (n * 5)   / gw : ml ? (n * 5)   / ml : n;
+      default: return n; // serving, piece, slice, scoop
+    }
+  }
+
+  const gramWeight = sheet ? parseGramWeight(sheet.servingSize) : null;
+  const mlVolume   = sheet ? parseMlVolume(sheet.servingSize)   : null;
+  const servings   = computeServingMultiplier(parseFloat(amount) || 0, unit, gramWeight, mlVolume);
 
   const scaledCal     = sheet ? Math.round(sheet.baseCal     * servings) : 0;
   const scaledProtein = sheet ? round1(sheet.baseProtein * servings) : 0;
   const scaledCarbs   = sheet ? round1(sheet.baseCarbs   * servings) : 0;
   const scaledFat     = sheet ? round1(sheet.baseFat     * servings) : 0;
 
+  async function handleNLSubmit() {
+    if (!nlInput.trim() || !sheet) return;
+    setNlLoading(true);
+    setNlExplanation(null);
+    try {
+      const res = await fetch(`${SERVER_URL}/interpret-quantity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          foodName: sheet.name,
+          description: nlInput.trim(),
+          servingSize: sheet.servingSize,
+          caloriesPerServing: sheet.baseCal,
+        }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      const gw = parseGramWeight(sheet.servingSize);
+      if (gw && data.estimatedGrams) {
+        setAmount(String(data.estimatedGrams));
+        setUnit('g');
+      } else {
+        setAmount(String(data.servings ?? 1));
+        setUnit('serving');
+      }
+      setNlExplanation(data.explanation ?? '');
+      setServingMode('structured');
+    } catch {
+      setNlExplanation('Could not estimate — please enter manually');
+    } finally {
+      setNlLoading(false);
+    }
+  }
+
   function buildItem(): MacroItem {
+    const portionStr = unit === 'serving'
+      ? (parseFloat(amount) === 1 ? '1 serving' : `${amount} servings`)
+      : `${amount} ${unit}`;
     return {
       name:    sheet!.name,
-      portion: servings === 1 ? '1 serving' : `${servings} servings`,
+      portion: portionStr,
       cal:     scaledCal,
       protein: scaledProtein,
       carbs:   scaledCarbs,
@@ -270,7 +365,7 @@ export default function SearchScreen({ navigation, route }: Props) {
     addMeal({
       id:        String(Date.now()),
       timestamp: new Date().toISOString(),
-      period:    selectedPeriod,
+      period:    pickedPeriod,
       items:     [item],
       totals:    { cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
     });
@@ -424,24 +519,72 @@ export default function SearchScreen({ navigation, route }: Props) {
               </View>
             </View>
 
-            <View style={s.stepperRow}>
-              <TouchableOpacity
-                style={[s.stepBtn, servings <= 0.5 && s.stepBtnDisabled]}
-                onPress={() => stepServings(-0.5)}
-                disabled={servings <= 0.5}
-              >
-                <Text style={s.stepBtnText}>−</Text>
-              </TouchableOpacity>
-              <Text style={s.servingsVal}>{servings}</Text>
-              <TouchableOpacity
-                style={[s.stepBtn, servings >= 10 && s.stepBtnDisabled]}
-                onPress={() => stepServings(0.5)}
-                disabled={servings >= 10}
-              >
-                <Text style={s.stepBtnText}>+</Text>
-              </TouchableOpacity>
-              <Text style={s.servingsUnit}>serving{servings !== 1 ? 's' : ''}</Text>
-            </View>
+            {/* ── Serving UI ─────────────────────────────────────────── */}
+            {servingMode === 'structured' ? (
+              <View style={s.servingRow}>
+                <TextInput
+                  style={s.amountInput}
+                  value={amount}
+                  onChangeText={setAmount}
+                  keyboardType="decimal-pad"
+                  selectTextOnFocus
+                />
+                <TouchableOpacity style={s.unitBtn} onPress={() => setShowUnitPicker(true)}>
+                  <Text style={s.unitBtnText}>{unit}</Text>
+                  <Text style={s.unitBtnChevron}>▾</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={s.nlRow}>
+                <TextInput
+                  style={s.nlInput}
+                  value={nlInput}
+                  onChangeText={setNlInput}
+                  placeholder="e.g. 'a big bowl', 'two scoops'…"
+                  placeholderTextColor="#555"
+                  returnKeyType="send"
+                  onSubmitEditing={handleNLSubmit}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[s.nlSendBtn, (nlLoading || !nlInput.trim()) && s.nlSendBtnDisabled]}
+                  onPress={handleNLSubmit}
+                  disabled={nlLoading || !nlInput.trim()}
+                >
+                  {nlLoading
+                    ? <ActivityIndicator color="#0F0F0F" size="small" />
+                    : <Text style={s.nlSendBtnText}>↵</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity onPress={() => { setServingMode(m => m === 'structured' ? 'natural' : 'structured'); setNlExplanation(null); }}>
+              <Text style={s.servingModeToggle}>
+                {servingMode === 'structured' ? 'Describe amount instead' : '← Enter amount manually'}
+              </Text>
+            </TouchableOpacity>
+
+            {nlExplanation ? (
+              <Text style={s.nlExplanationText}>{nlExplanation}</Text>
+            ) : null}
+
+            {/* ── Period picker ──────────────────────────────────────── */}
+            {!editMode && !periodLocked && (
+              <View style={s.periodPickerRow}>
+                {(['breakfast', 'lunch', 'dinner', 'snacks'] as MealPeriod[]).map(p => (
+                  <TouchableOpacity
+                    key={p}
+                    style={[s.mealPeriodPill, pickedPeriod === p && s.mealPeriodPillActive]}
+                    onPress={() => setPickedPeriod(p)}
+                  >
+                    <Text style={[s.mealPeriodPillText, pickedPeriod === p && s.mealPeriodPillTextActive]}>
+                      {PERIOD_LABELS[p]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
             {editMode ? (
               <TouchableOpacity style={s.logBtn} onPress={handleUpdate}>
@@ -451,7 +594,9 @@ export default function SearchScreen({ navigation, route }: Props) {
               <>
                 <TouchableOpacity style={s.logBtn} onPress={handleLogIt}>
                   <Text style={s.logBtnText}>
-                    {selectedPeriodLabel ? `Log to ${selectedPeriodLabel}` : 'Log It'}
+                    {periodLocked
+                      ? `Log to ${PERIOD_LABELS[pickedPeriod]}`
+                      : `Log · ${PERIOD_LABELS[pickedPeriod]}`}
                   </Text>
                 </TouchableOpacity>
                 {isEstimate && (
@@ -462,6 +607,27 @@ export default function SearchScreen({ navigation, route }: Props) {
               </>
             )}
           </View>
+        </View>
+      </Modal>
+
+      {/* Unit picker modal */}
+      <Modal
+        visible={showUnitPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowUnitPicker(false)}
+      >
+        <TouchableOpacity style={s.unitPickerBackdrop} activeOpacity={1} onPress={() => setShowUnitPicker(false)} />
+        <View style={s.unitPickerBox}>
+          {getUnitOptions(sheet?.servingSize ?? '').map(u => (
+            <TouchableOpacity
+              key={u}
+              style={[s.unitPickerOption, unit === u && s.unitPickerOptionActive]}
+              onPress={() => { setUnit(u); setShowUnitPicker(false); }}
+            >
+              <Text style={[s.unitPickerOptionText, unit === u && s.unitPickerOptionTextActive]}>{u}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </Modal>
     </View>
@@ -558,21 +724,79 @@ const s = StyleSheet.create({
   pillRed:         { backgroundColor: '#3A1010' },
   pillTextRed:     { color: '#FF6B6B' },
 
-  stepperRow: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: 14, marginBottom: 24,
+  // Serving UI — structured mode
+  servingRow: {
+    flexDirection: 'row', gap: 10, marginBottom: 8,
   },
-  stepBtn: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center',
+  amountInput: {
+    flex: 1, backgroundColor: '#0F0F0F', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 20, fontWeight: '700', color: '#FFFFFF', textAlign: 'center',
+    borderWidth: 1, borderColor: '#2A2A2A',
   },
-  stepBtnDisabled: { opacity: 0.3 },
-  stepBtnText: { fontSize: 26, color: '#FFFFFF', lineHeight: 30 },
-  servingsVal: {
-    fontSize: 24, fontWeight: '800', color: '#FFFFFF',
-    minWidth: 44, textAlign: 'center',
+  unitBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#0F0F0F', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderWidth: 1, borderColor: '#2A2A2A', minWidth: 90,
   },
-  servingsUnit: { fontSize: 14, color: '#8A8A8A', fontWeight: '500' },
+  unitBtnText: { fontSize: 16, fontWeight: '600', color: '#FFFFFF', flex: 1 },
+  unitBtnChevron: { fontSize: 12, color: '#8A8A8A' },
+
+  // Serving UI — natural language mode
+  nlRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  nlInput: {
+    flex: 1, backgroundColor: '#0F0F0F', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, color: '#FFFFFF',
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  nlSendBtn: {
+    width: 48, height: 48, borderRadius: 10,
+    backgroundColor: '#00E5A0', alignItems: 'center', justifyContent: 'center',
+  },
+  nlSendBtnDisabled: { opacity: 0.4 },
+  nlSendBtnText: { fontSize: 20, color: '#0F0F0F', fontWeight: '700' },
+  nlExplanationText: {
+    fontSize: 12, color: '#00E5A0', fontStyle: 'italic', marginBottom: 12, textAlign: 'center',
+  },
+
+  servingModeToggle: {
+    fontSize: 12, color: '#8A8A8A', textAlign: 'center',
+    marginBottom: 16, textDecorationLine: 'underline',
+  },
+
+  // Period picker in sheet
+  periodPickerRow: {
+    flexDirection: 'row', gap: 6, marginBottom: 16,
+  },
+  mealPeriodPill: {
+    flex: 1, alignItems: 'center', paddingVertical: 8,
+    borderRadius: 10, backgroundColor: '#0F0F0F',
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  mealPeriodPillActive: { backgroundColor: '#00E5A0', borderColor: '#00E5A0' },
+  mealPeriodPillText: { fontSize: 11, fontWeight: '600', color: '#8A8A8A' },
+  mealPeriodPillTextActive: { color: '#0F0F0F' },
+
+  // Unit picker modal
+  unitPickerBackdrop: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  unitPickerBox: {
+    position: 'absolute', bottom: 120, alignSelf: 'center',
+    backgroundColor: '#1A1A1A', borderRadius: 14,
+    borderWidth: 1, borderColor: '#2A2A2A',
+    overflow: 'hidden', minWidth: 160,
+  },
+  unitPickerOption: {
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: '#2A2A2A',
+  },
+  unitPickerOptionActive: { backgroundColor: '#002A1A' },
+  unitPickerOptionText: { fontSize: 16, color: '#FFFFFF' },
+  unitPickerOptionTextActive: { color: '#00E5A0', fontWeight: '700' },
 
   logBtn: {
     backgroundColor: '#00E5A0', borderRadius: 14,

@@ -7,7 +7,7 @@ import {
 import { Swipeable } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { useMealContext, MacroItem, LoggedMeal, autoDetectPeriod } from '../context/MealContext';
+import { useMealContext, MacroItem, LoggedMeal, MealPeriod, autoDetectPeriod } from '../context/MealContext';
 import { MenuItem } from '../services/menuService';
 import { AnalysisResult } from '../services/visionService';
 
@@ -164,6 +164,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
 
+  const [pickedPeriod, setPickedPeriod] = useState<MealPeriod>(autoDetectPeriod());
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -370,7 +371,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
       const scaled = getScaled(item, portion);
       return { name: item.name, portion: VISUAL_LABELS[portion].label, ...scaled };
     });
-    addMeal({ id: String(Date.now()), timestamp: new Date().toISOString(), period: autoDetectPeriod(), items: mealItems, totals });
+    addMeal({ id: String(Date.now()), timestamp: new Date().toISOString(), period: pickedPeriod, items: mealItems, totals });
     navigation.navigate('MainTabs', { screen: 'Dashboard' });
   }
 
@@ -560,6 +561,21 @@ export default function EstimateScreen({ navigation, route }: Props) {
               <Text style={styles.trafficItem}>{fatSignal(totals.fat)} Fat</Text>
             </View>
           )}
+        </View>
+
+        {/* Meal period picker */}
+        <View style={styles.periodPickerRow}>
+          {(['breakfast', 'lunch', 'dinner', 'snacks'] as MealPeriod[]).map(p => (
+            <TouchableOpacity
+              key={p}
+              style={[styles.periodPillBtn, pickedPeriod === p && styles.periodPillBtnActive]}
+              onPress={() => setPickedPeriod(p)}
+            >
+              <Text style={[styles.periodPillBtnText, pickedPeriod === p && styles.periodPillBtnTextActive]}>
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         <TouchableOpacity
@@ -801,6 +817,18 @@ const styles = StyleSheet.create({
   totalMacros: { fontSize: 14, color: '#8A8A8A', marginBottom: 14 },
   trafficRow: { flexDirection: 'row', gap: 14 },
   trafficItem: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+
+  periodPickerRow: {
+    flexDirection: 'row', gap: 6, marginBottom: 12,
+  },
+  periodPillBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: 9,
+    borderRadius: 10, backgroundColor: '#1A1A1A',
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  periodPillBtnActive: { backgroundColor: '#00E5A0', borderColor: '#00E5A0' },
+  periodPillBtnText: { fontSize: 11, fontWeight: '600', color: '#8A8A8A' },
+  periodPillBtnTextActive: { color: '#0F0F0F' },
 
   button: { backgroundColor: '#00E5A0', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   buttonDisabled: { opacity: 0.35 },

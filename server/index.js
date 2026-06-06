@@ -80,7 +80,30 @@ STRICT RULES:
 - Ignore all background objects (books, plates without food, containers, utensils, furniture, etc.)
 - Ignore packaging, napkins, and non-food items
 - If you see food AND background objects, only include the food
-- Do not identify people, hands, or body parts as food items`;
+- Do not identify people, hands, or body parts as food items
+
+For each food item:
+- Estimate the actual visible quantity using visual reference cues in the frame
+  (plate diameter ≈ 25cm, palm-size protein ≈ 85g, tennis ball ≈ 0.5 cup cooked grain)
+- Return estimatedQuantityGrams: your best numeric estimate of grams (or ml for liquids)
+- Calculate calories and macros FROM that weight, not from a generic serving
+- Set portionMultiplier = estimatedQuantityGrams / 100 (so the portion buttons scale from your estimate)
+
+Common per-100g references:
+  Cooked chicken breast: 165 cal, 31g P, 0g C, 3.6g F
+  Cooked white rice: 130 cal, 2.7g P, 28g C, 0.3g F
+  Cooked pasta: 158 cal, 5.8g P, 31g C, 0.9g F
+  Whole milk: 61 cal, 3.2g P, 4.8g C, 3.3g F
+  Unsweetened almond milk: 15 cal, 0.4g P, 0.4g C, 1.3g F
+  Banana: 89 cal, 1.1g P, 23g C, 0.3g F
+  Peanut butter: 588 cal, 25g P, 20g C, 50g F
+  Greek yogurt (plain): 59 cal, 10g P, 3.6g C, 0.4g F
+  Oats (dry): 389 cal, 17g P, 66g C, 7g F
+  Broccoli: 34 cal, 2.8g P, 7g C, 0.4g F
+  Egg (whole): 155 cal, 13g P, 1.1g C, 11g F
+  Cheddar cheese: 403 cal, 25g P, 1.3g C, 33g F
+  Olive oil: 884 cal, 0g P, 0g C, 100g F
+  Whey protein powder: 400 cal, 80g P, 8g C, 8g F (per 100g dry)`;
 
 const SUPPLEMENT_GUIDANCE = `For supplements, protein powders, fiber supplements, vitamins, and packaged food products:
 - Identify the specific product and brand if visible on the label
@@ -118,36 +141,40 @@ The user has photographed their meal at a dining hall.
 The following items are currently on the menu:
 ${menuList}
 
-Identify which of these menu items are visible in the photo and estimate the portion size.
+Identify which of these menu items are visible in the photo and estimate the visible quantity.
 Return ONLY valid JSON in this exact format:
 {
   "detectedItems": [
     {
       "name": "item name exactly as listed above",
-      "portionMultiplier": 1.0,
+      "estimatedQuantity": "180g",
+      "estimatedQuantityGrams": 180,
+      "portionMultiplier": 1.8,
       "confidence": 0.9
     }
   ],
   "mode": "dining_hall"
 }
-Portion multiplier: 0.5 = half portion, 1.0 = normal, 1.5 = large, 2.0 = double. Only include items you can actually see.
+Set portionMultiplier = estimatedQuantityGrams / 100. Only include items you can actually see.
 Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
   } else {
     prompt = `${FOOD_PREAMBLE}
 
 ${SUPPLEMENT_GUIDANCE}
 
-Identify all food items visible in this photo and estimate their calories and macros.
+Identify all food items visible in this photo and estimate their calories and macros based on actual visible weight.
 Return ONLY valid JSON in this exact format:
 {
   "detectedItems": [
     {
       "name": "food name",
+      "estimatedQuantity": "150g",
+      "estimatedQuantityGrams": 150,
       "calories": 300,
       "protein": 25,
       "carbs": 20,
       "fat": 8,
-      "portionMultiplier": 1.0,
+      "portionMultiplier": 1.5,
       "confidence": 0.85
     }
   ],
@@ -227,12 +254,15 @@ Return ONLY valid JSON in this exact format:
   "detectedItems": [
     {
       "name": "item name exactly as listed above",
-      "portionMultiplier": 1.0,
+      "estimatedQuantity": "180g",
+      "estimatedQuantityGrams": 180,
+      "portionMultiplier": 1.8,
       "confidence": 0.9
     }
   ],
   "mode": "dining_hall"
 }
+Set portionMultiplier = estimatedQuantityGrams / 100.
 Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
   } else {
     prompt = `${FOOD_PREAMBLE}
@@ -248,11 +278,13 @@ Return ONLY valid JSON in this exact format:
   "detectedItems": [
     {
       "name": "food name",
+      "estimatedQuantity": "150g",
+      "estimatedQuantityGrams": 150,
       "calories": 300,
       "protein": 25,
       "carbs": 20,
       "fat": 8,
-      "portionMultiplier": 1.0,
+      "portionMultiplier": 1.5,
       "confidence": 0.85
     }
   ],

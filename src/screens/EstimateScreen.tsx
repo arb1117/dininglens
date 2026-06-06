@@ -44,6 +44,7 @@ type NormalizedItem = {
   fat: number;
   initialPortion: Portion;
   confidence?: number;
+  estimatedQuantityGrams?: number;
   manuallyAdded?: boolean;
 };
 
@@ -79,18 +80,22 @@ function buildInitialItems(
           m => m.name.toLowerCase() === detected.name.toLowerCase()
         );
         if (!match) return null;
+        const scale = detected.estimatedQuantityGrams != null
+          ? detected.estimatedQuantityGrams / 100
+          : detected.portionMultiplier;
         return {
           id: match.id,
           name: match.name,
-          cal: match.calories,
-          protein: match.protein,
-          carbs: match.carbs,
-          fat: match.fat,
-          initialPortion: multiplierToPortion(detected.portionMultiplier),
+          cal: round1(match.calories * scale),
+          protein: round1(match.protein * scale),
+          carbs: round1(match.carbs * scale),
+          fat: round1(match.fat * scale),
+          initialPortion: 'Normal' as Portion,
           confidence: detected.confidence,
+          estimatedQuantityGrams: detected.estimatedQuantityGrams,
         };
       })
-      .filter((x): x is NormalizedItem => x !== null);
+      .filter((x) => x !== null) as NormalizedItem[];
   }
 
   return analysisResult.detectedItems.map((item, i) => ({
@@ -100,8 +105,9 @@ function buildInitialItems(
     protein: item.protein ?? 0,
     carbs: item.carbs ?? 0,
     fat: item.fat ?? 0,
-    initialPortion: multiplierToPortion(item.portionMultiplier),
+    initialPortion: item.estimatedQuantityGrams != null ? 'Normal' : multiplierToPortion(item.portionMultiplier),
     confidence: item.confidence,
+    estimatedQuantityGrams: item.estimatedQuantityGrams,
   }));
 }
 
@@ -360,6 +366,11 @@ export default function EstimateScreen({ navigation, route }: Props) {
               >
                 <View style={styles.itemCard}>
                   <Text style={styles.itemName}>{item.name}</Text>
+                  {item.estimatedQuantityGrams != null && (
+                    <Text style={styles.quantityHint}>
+                      ~{Math.round(item.estimatedQuantityGrams * MULTIPLIERS[portion])}g · {portion}
+                    </Text>
+                  )}
                   {!item.manuallyAdded && item.confidence !== undefined && (
                     <View style={styles.confidenceRow}>
                       <View style={styles.confidenceBarTrack}>
@@ -578,7 +589,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A', borderRadius: 12, padding: 12, marginBottom: 12,
     borderWidth: 1, borderColor: '#2A2A2A',
   },
-  itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
+  itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 2 },
+  quantityHint: { fontSize: 12, color: '#00E5A0', marginBottom: 6 },
 
   confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   confidenceBarTrack: {

@@ -6,6 +6,8 @@ export type DetectedItem = {
   name: string;
   portionMultiplier: number;
   confidence: number;
+  estimatedQuantityGrams?: number;
+  estimatedQuantity?: string;
   // Generic mode only
   calories?: number;
   protein?: number;

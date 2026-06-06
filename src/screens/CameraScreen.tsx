@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,49 +10,47 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { detectVenue } from '../services/venueService';
+import { KNOWN_VENUES } from '../services/venueService';
 import { fetchMenu } from '../services/menuService';
 import { analyzeImage } from '../services/visionService';
 import { useMealContext } from '../context/MealContext';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Camera'> };
 
-type VenueStatus = 'loading' | 'found' | 'none';
+type DiningHallStatus = 'inactive' | 'loading' | 'active';
 
 export default function CameraScreen({ navigation }: Props) {
   const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems } =
     useMealContext();
 
   const [permission, requestPermission] = useCameraPermissions();
-  const [venueStatus, setVenueStatus] = useState<VenueStatus>('loading');
+  const [diningHallStatus, setDiningHallStatus] = useState<DiningHallStatus>('inactive');
   const [analyzing, setAnalyzing] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const cameraRef = useRef<CameraView>(null);
 
-  // Venue + menu load on mount
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setVenueStatus('loading');
-      try {
-        const detected = await detectVenue({ lat: 0, lon: 0 });
-        if (cancelled) return;
-        if (!detected) { setVenue(null); setVenueStatus('none'); return; }
-        setVenue(detected);
-        const date = new Date().toISOString().split('T')[0];
-        const { items, periodLabel: label } = await fetchMenu(detected.locationId, date);
-        if (cancelled) return;
-        setMenuItems(items);
-        setPeriodLabel(label);
-        setVenueStatus('found');
-      } catch {
-        if (!cancelled) setVenueStatus('none');
-      }
+  const isDiningHallMode = diningHallStatus === 'active';
+
+  async function enableDiningHallMode() {
+    setDiningHallStatus('loading');
+    try {
+      const duncan = KNOWN_VENUES[0];
+      const date = new Date().toISOString().split('T')[0];
+      const { items, periodLabel: label } = await fetchMenu(duncan.locationId, date);
+      setVenue(duncan);
+      setMenuItems(items);
+      setPeriodLabel(label);
+      setDiningHallStatus('active');
+    } catch {
+      setDiningHallStatus('inactive');
     }
-    load();
-    return () => { cancelled = true; };
-  }, []);
+  }
+
+  function disableDiningHallMode() {
+    setDiningHallStatus('inactive');
+    setVenue(null);
+  }
 
   async function handleShutter() {
     if (!cameraRef.current || analyzing) return;
@@ -67,9 +65,10 @@ export default function CameraScreen({ navigation }: Props) {
 
       if (!photo?.base64) throw new Error('No image data');
 
+      // Only pass menu context when user has opted into dining hall mode
       const result = await analyzeImage(
         photo.base64,
-        venueStatus === 'found' ? menuItems : undefined
+        isDiningHallMode ? menuItems : undefined
       );
 
       navigation.navigate('Estimate', { analysisResult: result });
@@ -107,13 +106,36 @@ export default function CameraScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back">
-        {/* Top overlay — safe area + banner */}
+
+        {/* Top overlay */}
         <SafeAreaView style={styles.topOverlay}>
-          <VenueBanner
-            status={venueStatus}
-            venueName={venue?.name}
-            periodLabel={periodLabel}
-          />
+          {/* Dining hall status banner / toggle */}
+          {diningHallStatus === 'inactive' && (
+            <TouchableOpacity style={styles.diningToggle} onPress={enableDiningHallMode}>
+              <Text style={styles.diningToggleText}>🍽 Near a dining hall? Tap to enable</Text>
+            </TouchableOpacity>
+          )}
+
+          {diningHallStatus === 'loading' && (
+            <View style={styles.banner}>
+              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
+              <Text style={styles.bannerText}>Loading dining hall menu…</Text>
+            </View>
+          )}
+
+          {diningHallStatus === 'active' && venue && (
+            <View style={[styles.banner, styles.bannerFound]}>
+              <Text style={styles.bannerText} numberOfLines={1}>
+                {'📍 '}
+                <Text style={styles.bannerVenue}>{venue.name}</Text>
+                {` — ${periodLabel} menu loaded`}
+              </Text>
+              <TouchableOpacity onPress={disableDiningHallMode} style={styles.bannerDismiss}>
+                <Text style={styles.bannerDismissText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {errorBanner && (
             <View style={styles.errorBanner}>
               <Text style={styles.errorBannerText}>{errorBanner}</Text>
@@ -131,7 +153,6 @@ export default function CameraScreen({ navigation }: Props) {
 
         {/* Bottom controls */}
         <SafeAreaView style={styles.bottomOverlay}>
-          {/* Shutter */}
           <TouchableOpacity
             style={[styles.shutter, analyzing && styles.shutterDisabled]}
             onPress={handleShutter}
@@ -140,7 +161,6 @@ export default function CameraScreen({ navigation }: Props) {
             <View style={styles.shutterInner} />
           </TouchableOpacity>
 
-          {/* Floating history button */}
           <TouchableOpacity
             style={styles.historyButton}
             onPress={() => navigation.navigate('History')}
@@ -148,40 +168,10 @@ export default function CameraScreen({ navigation }: Props) {
             <Text style={styles.historyButtonText}>📋</Text>
           </TouchableOpacity>
         </SafeAreaView>
+
       </CameraView>
     </View>
   );
-}
-
-function VenueBanner({
-  status,
-  venueName,
-  periodLabel,
-}: {
-  status: VenueStatus;
-  venueName?: string;
-  periodLabel: string;
-}) {
-  if (status === 'loading') {
-    return (
-      <View style={styles.banner}>
-        <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
-        <Text style={styles.bannerText}>Detecting venue…</Text>
-      </View>
-    );
-  }
-  if (status === 'found' && venueName) {
-    return (
-      <View style={[styles.banner, styles.bannerFound]}>
-        <Text style={styles.bannerText}>
-          {'📍 '}
-          <Text style={styles.bannerVenue}>{venueName}</Text>
-          {` — ${periodLabel} menu loaded`}
-        </Text>
-      </View>
-    );
-  }
-  return null;
 }
 
 const SHUTTER_SIZE = 72;
@@ -191,11 +181,23 @@ const styles = StyleSheet.create({
   camera: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // Top overlay
   topOverlay: {
     paddingHorizontal: 12,
     paddingTop: 8,
   },
+
+  // Inactive dining hall toggle chip
+  diningToggle: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    marginBottom: 6,
+  },
+  diningToggleText: { fontSize: 13, color: 'rgba(255,255,255,0.85)' },
+
+  // Active/loading venue banner
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -205,11 +207,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 6,
   },
-  bannerFound: {
-    backgroundColor: 'rgba(46,125,50,0.75)',
-  },
-  bannerText: { fontSize: 13, color: '#fff' },
+  bannerFound: { backgroundColor: 'rgba(46,125,50,0.85)' },
+  bannerText: { fontSize: 13, color: '#fff', flex: 1 },
   bannerVenue: { fontWeight: '700' },
+  bannerDismiss: { paddingLeft: 10, paddingVertical: 2 },
+  bannerDismissText: { color: 'rgba(255,255,255,0.8)', fontSize: 14 },
+
   errorBanner: {
     backgroundColor: 'rgba(180,0,0,0.75)',
     borderRadius: 10,
@@ -219,7 +222,6 @@ const styles = StyleSheet.create({
   },
   errorBannerText: { fontSize: 13, color: '#fff', textAlign: 'center' },
 
-  // Analyzing overlay
   analyzingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -229,7 +231,6 @@ const styles = StyleSheet.create({
   },
   analyzingText: { color: '#fff', fontSize: 17, fontWeight: '600' },
 
-  // Bottom controls
   bottomOverlay: {
     position: 'absolute',
     bottom: 0,
@@ -268,33 +269,21 @@ const styles = StyleSheet.create({
   },
   historyButtonText: { fontSize: 22 },
 
-  // Permission screen
   permissionScreen: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
+    flex: 1, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center', padding: 32,
   },
   permissionTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#500000',
-    marginBottom: 16,
-    textAlign: 'center',
+    fontSize: 22, fontWeight: '800', color: '#500000',
+    marginBottom: 16, textAlign: 'center',
   },
   permissionBody: {
-    fontSize: 15,
-    color: '#555',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 32,
+    fontSize: 15, color: '#555', textAlign: 'center',
+    lineHeight: 22, marginBottom: 32,
   },
   permissionButton: {
-    backgroundColor: '#500000',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
+    backgroundColor: '#500000', borderRadius: 12,
+    paddingVertical: 16, paddingHorizontal: 32,
   },
   permissionButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

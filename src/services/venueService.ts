@@ -19,11 +19,11 @@ export const KNOWN_VENUES: Venue[] = [
 ];
 
 /**
- * Stub: always returns Duncan Dining Hall.
- * Phase 3 will replace this with real GPS + lookup against KNOWN_VENUES.
+ * Phase 3 stub — returns null until real GPS detection is wired up.
+ * Phase 4 will use coords to match against KNOWN_VENUES.
  */
 export async function detectVenue(
-  _coords: { lat: number; lon: number }
+  _coords?: { lat: number; lon: number }
 ): Promise<Venue | null> {
-  return KNOWN_VENUES[0];
+  return null;
 }

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { KNOWN_VENUES } from '../services/venueService';
+import { KNOWN_VENUES, detectVenue } from '../services/venueService';
 import { fetchMenu } from '../services/menuService';
 import { analyzeImage } from '../services/visionService';
 import { useMealContext } from '../context/MealContext';
@@ -32,13 +32,22 @@ export default function CameraScreen({ navigation }: Props) {
 
   const isDiningHallMode = diningHallStatus === 'active';
 
-  async function enableDiningHallMode() {
+  // Run GPS venue detection in background on mount — auto-enables dining hall mode if nearby
+  useEffect(() => {
+    detectVenue().then(detected => {
+      if (detected && diningHallStatus === 'inactive') {
+        enableDiningHallModeForVenue(detected);
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function enableDiningHallModeForVenue(venueToLoad = KNOWN_VENUES[0]) {
     setDiningHallStatus('loading');
     try {
-      const duncan = KNOWN_VENUES[0];
       const date = new Date().toISOString().split('T')[0];
-      const { items, periodLabel: label } = await fetchMenu(duncan.locationId, date);
-      setVenue(duncan);
+      const { items, periodLabel: label } = await fetchMenu(venueToLoad.locationId, date);
+      setVenue(venueToLoad);
       setMenuItems(items);
       setPeriodLabel(label);
       setDiningHallStatus('active');
@@ -111,7 +120,7 @@ export default function CameraScreen({ navigation }: Props) {
         <SafeAreaView style={styles.topOverlay}>
           {/* Dining hall status banner / toggle */}
           {diningHallStatus === 'inactive' && (
-            <TouchableOpacity style={styles.diningToggle} onPress={enableDiningHallMode}>
+            <TouchableOpacity style={styles.diningToggle} onPress={() => enableDiningHallModeForVenue()}>
               <Text style={styles.diningToggleText}>🍽 Near a dining hall? Tap to enable</Text>
             </TouchableOpacity>
           )}

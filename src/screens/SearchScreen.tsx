@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
   ActivityIndicator, StyleSheet, Modal, ScrollView,
-  Keyboard, Platform,
+  Keyboard, Platform, TouchableWithoutFeedback,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -512,6 +512,7 @@ export default function SearchScreen({ navigation, route }: Props) {
       >
         <View style={s.sheetWrap}>
           <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setSheet(null)} />
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={s.sheet}>
             <View style={s.handle} />
 
@@ -540,6 +541,8 @@ export default function SearchScreen({ navigation, route }: Props) {
                   value={amount}
                   onChangeText={setAmount}
                   keyboardType="decimal-pad"
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
                   selectTextOnFocus
                 />
                 <TouchableOpacity style={s.unitBtn} onPress={() => setShowUnitPicker(true)}>
@@ -620,6 +623,7 @@ export default function SearchScreen({ navigation, route }: Props) {
               </>
             )}
           </View>
+          </TouchableWithoutFeedback>
         </View>
       </Modal>
 

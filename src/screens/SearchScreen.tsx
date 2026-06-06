@@ -7,6 +7,8 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem, MealPeriod } from '../context/MealContext';
+import { detectVenue, Venue } from '../services/venueService';
+import { fetchVenueMenu, MenuItem } from '../services/menuService';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
 
@@ -59,8 +61,15 @@ type SheetState = {
 function round1(n: number) { return Math.round(n * 10) / 10; }
 
 export default function SearchScreen({ navigation, route }: Props) {
-  const { addMeal, mealLog, updateMealItem } = useMealContext();
+  const {
+    addMeal, mealLog, updateMealItem,
+    venue: ctxVenue, menuItems: ctxMenuItems, periodLabel: ctxPeriodLabel,
+  } = useMealContext();
   const params = route?.params;
+
+  const [nearbyVenue, setNearbyVenue] = useState<Venue | null>(ctxVenue);
+  const [nearbyItems, setNearbyItems] = useState<MenuItem[]>(ctxVenue ? ctxMenuItems : []);
+  const [nearbyPeriodLabel, setNearbyPeriodLabel] = useState<string>(ctxVenue ? ctxPeriodLabel : '');
 
   const editMode     = params?.editMode    ?? false;
   const mealId       = params?.mealId;
@@ -150,6 +159,35 @@ export default function SearchScreen({ navigation, route }: Props) {
     ];
   }, [filter, apiResults, myFoodResults]);
 
+  // Sync nearby state if context venue changes (e.g. Camera loaded it before Search opened)
+  useEffect(() => {
+    if (ctxVenue) {
+      setNearbyVenue(ctxVenue);
+      setNearbyItems(ctxMenuItems);
+      setNearbyPeriodLabel(ctxPeriodLabel);
+    }
+  }, [ctxVenue, ctxMenuItems, ctxPeriodLabel]);
+
+  // Detect venue silently if not already in context
+  useEffect(() => {
+    if (ctxVenue) return;
+    detectVenue().then(async (detected) => {
+      if (!detected) return;
+      if (detected.type === 'restaurant' && detected.menuItems?.length) {
+        setNearbyVenue(detected);
+        setNearbyItems(detected.menuItems as MenuItem[]);
+        setNearbyPeriodLabel('Menu');
+      } else if (detected.type === 'dining_hall') {
+        const date = new Date().toISOString().split('T')[0];
+        const { items, periodLabel } = await fetchVenueMenu(detected, date);
+        setNearbyVenue(detected);
+        setNearbyItems(items);
+        setNearbyPeriodLabel(periodLabel);
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Edit mode: auto-open sheet with existing item data
   useEffect(() => {
     if (editMode && existingItem) {
@@ -175,6 +213,19 @@ export default function SearchScreen({ navigation, route }: Props) {
       baseCarbs:   item.carbs,
       baseFat:     item.fat,
       servingSize: item.serving_size,
+    });
+    setServings(1.0);
+  }
+
+  function openNearbySheet(item: MenuItem) {
+    Keyboard.dismiss();
+    setSheet({
+      name:        item.name,
+      baseCal:     item.calories,
+      baseProtein: item.protein,
+      baseCarbs:   item.carbs,
+      baseFat:     item.fat,
+      servingSize: '1 serving',
     });
     setServings(1.0);
   }
@@ -277,31 +328,51 @@ export default function SearchScreen({ navigation, route }: Props) {
         ))}
       </ScrollView>
 
-      {loading && filter !== 'myfoods' && (
-        <View style={s.loadingRow}>
-          <ActivityIndicator color="#00E5A0" size="small" />
-          <Text style={s.loadingText}>Searching…</Text>
-        </View>
-      )}
-
-      {!loading && displayResults.length === 0 && !query.trim() && (
-        <View style={s.emptyState}>
-          <Text style={s.emptyIcon}>🔍</Text>
-          <Text style={s.emptyText}>Search for any food, supplement, or product</Text>
-        </View>
-      )}
-
-      {!loading && displayResults.length === 0 && !!query.trim() && (
-        <View style={s.emptyState}>
-          <Text style={s.emptyText}>No results for "{query}"</Text>
-        </View>
-      )}
-
       <FlatList
         data={displayResults}
         keyExtractor={(_, i) => String(i)}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={s.list}
+        ListHeaderComponent={
+          nearbyVenue && nearbyItems.length > 0 ? (
+            <View style={s.nearbySection}>
+              <Text style={s.nearbySectionHeader}>
+                {'📍 '}
+                <Text style={s.nearbySectionVenue}>{nearbyVenue.name}</Text>
+                {` — ${nearbyPeriodLabel} Menu`}
+              </Text>
+              {nearbyItems.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={s.nearbyItem}
+                  onPress={() => openNearbySheet(item)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.nearbyItemName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={s.nearbyItemCal}>{Math.round(item.calories)} cal</Text>
+                </TouchableOpacity>
+              ))}
+              <View style={s.nearbySectionDivider} />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          loading && filter !== 'myfoods' ? (
+            <View style={s.loadingRow}>
+              <ActivityIndicator color="#00E5A0" size="small" />
+              <Text style={s.loadingText}>Searching…</Text>
+            </View>
+          ) : !query.trim() ? (
+            <View style={s.emptyStateInline}>
+              <Text style={s.emptyIcon}>🔍</Text>
+              <Text style={s.emptyText}>Search for any food, supplement, or product</Text>
+            </View>
+          ) : (
+            <View style={s.emptyStateInline}>
+              <Text style={s.emptyText}>No results for "{query}"</Text>
+            </View>
+          )
+        }
         renderItem={({ item }) => (
           <TouchableOpacity style={s.resultCard} onPress={() => openSheet(item)} activeOpacity={0.8}>
             <Text style={s.resultName} numberOfLines={2}>{item.name}</Text>
@@ -427,7 +498,6 @@ const s = StyleSheet.create({
   },
   loadingText: { fontSize: 14, color: '#8A8A8A' },
 
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyText: { fontSize: 15, color: '#8A8A8A', textAlign: 'center' },
 
@@ -499,4 +569,26 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: '#2A2A2A', backgroundColor: '#1A1A1A',
   },
   addBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+
+  // Nearby section
+  nearbySection: { marginBottom: 4 },
+  nearbySectionHeader: {
+    fontSize: 12, fontWeight: '700', color: '#8A8A8A',
+    textTransform: 'uppercase', letterSpacing: 1,
+    paddingHorizontal: 4, paddingVertical: 10,
+  },
+  nearbySectionVenue: { color: '#00E5A0' },
+  nearbyItem: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: '#1A1A1A', borderRadius: 10, padding: 14, marginBottom: 6,
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  nearbyItemName: { fontSize: 14, fontWeight: '600', color: '#FFFFFF', flex: 1, marginRight: 12 },
+  nearbyItemCal: { fontSize: 13, color: '#8A8A8A' },
+  nearbySectionDivider: {
+    height: 1, backgroundColor: '#2A2A2A', marginVertical: 12,
+  },
+
+  // Inline empty / loading state inside FlatList
+  emptyStateInline: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 60 },
 });

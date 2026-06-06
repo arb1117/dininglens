@@ -269,30 +269,26 @@ export default function CameraScreen({ navigation, route }: Props) {
         } : undefined}
       >
 
-        {/* Active venue banner — slim top bar with teal background */}
+        {/* Active venue — small ambient pill at top */}
         {diningHallStatus === 'active' && venue && (
-          <SafeAreaView style={styles.venueBanner}>
-            <View style={styles.venueBannerContent}>
-              <Text style={styles.venueBannerText} numberOfLines={1}>
-                {'📍 '}
-                <Text style={styles.venueBannerName}>{venue.name}</Text>
-                {venue.type === 'restaurant' ? ' — Restaurant menu loaded' : ` — ${periodLabel} menu loaded`}
-              </Text>
-              <TouchableOpacity onPress={disableDiningHallMode} style={styles.venueBannerDismiss}>
-                <Text style={styles.venueBannerDismissText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
+          <View style={styles.venuePillContainer} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.venuePill}
+              onPress={disableDiningHallMode}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.venuePillText}>📍 {venue.name}</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
-        {/* Loading banner */}
+        {/* Loading venue — small spinner pill */}
         {diningHallStatus === 'loading' && (
-          <SafeAreaView style={styles.loadingBanner}>
-            <View style={styles.loadingBannerContent}>
-              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.loadingBannerText}>Loading dining hall menu…</Text>
+          <View style={styles.venuePillContainer} pointerEvents="none">
+            <View style={styles.venuePill}>
+              <ActivityIndicator size="small" color="#fff" />
             </View>
-          </SafeAreaView>
+          </View>
         )}
 
         {/* Error banner */}
@@ -375,16 +371,6 @@ export default function CameraScreen({ navigation, route }: Props) {
         >
           <Text style={styles.searchButtonText}>🔍</Text>
         </TouchableOpacity>
-
-        {/* Inactive venue chip — bottom-left */}
-        {diningHallStatus === 'inactive' && (
-          <TouchableOpacity
-            style={styles.venueChip}
-            onPress={() => enableDiningHallModeForVenue()}
-          >
-            <Text style={styles.venueChipText}>🍽 Dining hall?</Text>
-          </TouchableOpacity>
-        )}
 
         {/* History button — bottom-right */}
         <TouchableOpacity
@@ -474,28 +460,23 @@ const styles = StyleSheet.create({
   camera: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F0F0F' },
 
-  // Active venue banner — slim full-width top bar
-  venueBanner: { backgroundColor: '#00E5A0' },
-  venueBannerContent: {
-    flexDirection: 'row',
+  // Venue pill — small ambient badge at the top
+  venuePillContainer: {
+    position: 'absolute',
+    top: 60,
+    left: 0,
+    right: 0,
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
   },
-  venueBannerText: { flex: 1, fontSize: 13, color: '#0F0F0F' },
-  venueBannerName: { fontWeight: '700' },
-  venueBannerDismiss: { paddingLeft: 12 },
-  venueBannerDismissText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
-
-  // Loading banner
-  loadingBanner: { backgroundColor: 'rgba(0,0,0,0.55)' },
-  loadingBannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+  venuePill: {
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0,229,160,0.4)',
   },
-  loadingBannerText: { fontSize: 13, color: '#fff' },
+  venuePillText: { fontSize: 13, color: '#FFFFFF', fontWeight: '600' },
 
   // Error banner
   errorBannerWrap: { backgroundColor: 'rgba(180,0,0,0.8)' },
@@ -565,18 +546,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   searchButtonText: { fontSize: 22 },
-
-  // Inactive venue chip — bottom-left
-  venueChip: {
-    position: 'absolute',
-    left: 20,
-    bottom: 110,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-  },
-  venueChipText: { fontSize: 13, color: 'rgba(255,255,255,0.85)' },
 
   // History button — bottom-right
   historyButton: {

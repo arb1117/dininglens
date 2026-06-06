@@ -26,6 +26,34 @@ const MULTIPLIERS: Record<Portion, number> = {
 
 const PORTIONS: Portion[] = ['Small', 'Normal', 'Large', 'Double'];
 
+type Unit = 'g' | 'ml' | 'oz' | 'cup' | 'tbsp' | 'serving';
+const ALL_UNITS: Unit[] = ['g', 'ml', 'oz', 'cup', 'tbsp', 'serving'];
+
+function getDefaultUnit(name: string): Unit {
+  const lower = name.toLowerCase();
+  if (/milk|juice|shake|drink|water|broth|soup/.test(lower)) return 'ml';
+  if (/oil|butter|sauce|dressing|syrup/.test(lower)) return 'tbsp';
+  return 'g';
+}
+
+function gramsPerUnit(unit: Unit, itemName: string, estimatedGrams: number): number {
+  const lower = itemName.toLowerCase();
+  switch (unit) {
+    case 'g':   return 1;
+    case 'ml':  return 1;
+    case 'oz':  return 28.35;
+    case 'cup':
+      if (/milk|juice|shake|drink|water|broth|soup/.test(lower)) return 240;
+      if (/rice|pasta|grain|oat|cereal/.test(lower)) return 150;
+      return 100;
+    case 'tbsp':
+      if (/oil|butter|sauce|dressing/.test(lower)) return 15;
+      return 12;
+    case 'serving': return Math.max(estimatedGrams, 1);
+    default: return 1;
+  }
+}
+
 function round1(n: number) { return Math.round(n * 10) / 10; }
 
 function multiplierToPortion(m: number): Portion {
@@ -139,6 +167,27 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [hasReanalyzed, setHasReanalyzed] = useState(false);
 
+  const [customGrams, setCustomGrams] = useState<Record<string, number>>(() =>
+    Object.fromEntries(
+      buildInitialItems(analysisResult, menuItems).map(i => [i.id, i.estimatedQuantityGrams ?? 100])
+    )
+  );
+  const [displayUnits, setDisplayUnits] = useState<Record<string, Unit>>(() =>
+    Object.fromEntries(
+      buildInitialItems(analysisResult, menuItems).map(i => [i.id, getDefaultUnit(i.name)])
+    )
+  );
+  const [quantityTexts, setQuantityTexts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      buildInitialItems(analysisResult, menuItems).map(i => {
+        const unit = getDefaultUnit(i.name);
+        const g = i.estimatedQuantityGrams ?? 100;
+        return [i.id, String(round1(g / gramsPerUnit(unit, i.name, g)))];
+      })
+    )
+  );
+  const [unitPickerOpen, setUnitPickerOpen] = useState<string | null>(null);
+
   const isDiningHallMode = venue !== null;
 
   // Custom header back button — returns to Camera without logging
@@ -161,8 +210,17 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
   function getPortionFor(id: string): Portion { return portions[id] ?? 'Normal'; }
 
-  function getScaled(item: NormalizedItem, portion: Portion) {
+  function getScaled(item: NormalizedItem, portion: Portion, baseGrams?: number) {
     const m = MULTIPLIERS[portion];
+    if (baseGrams != null && item.estimatedQuantityGrams != null && item.estimatedQuantityGrams > 0) {
+      const factor = (baseGrams * m) / item.estimatedQuantityGrams;
+      return {
+        cal:     round1(item.cal     * factor),
+        protein: round1(item.protein * factor),
+        carbs:   round1(item.carbs   * factor),
+        fat:     round1(item.fat     * factor),
+      };
+    }
     return {
       cal:     round1(item.cal     * m),
       protein: round1(item.protein * m),
@@ -174,11 +232,10 @@ export default function EstimateScreen({ navigation, route }: Props) {
   function removeItem(id: string) {
     swipeableRefs.current[id]?.close();
     setItems(prev => prev.filter(i => i.id !== id));
-    setPortions(prev => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+    setPortions(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setCustomGrams(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setDisplayUnits(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setQuantityTexts(prev => { const next = { ...prev }; delete next[id]; return next; });
   }
 
   function openAddModal() {
@@ -211,6 +268,9 @@ export default function EstimateScreen({ navigation, route }: Props) {
       };
       setItems(prev => [...prev, newItem]);
       setPortions(prev => ({ ...prev, [newItem.id]: 'Normal' }));
+      setCustomGrams(prev => ({ ...prev, [newItem.id]: 100 }));
+      setDisplayUnits(prev => ({ ...prev, [newItem.id]: 'g' }));
+      setQuantityTexts(prev => ({ ...prev, [newItem.id]: '100' }));
       setAddModalVisible(false);
       setSearchQuery('');
     } catch {
@@ -233,6 +293,9 @@ export default function EstimateScreen({ navigation, route }: Props) {
     };
     setItems(prev => [...prev, newItem]);
     setPortions(prev => ({ ...prev, [newItem.id]: 'Normal' }));
+    setCustomGrams(prev => ({ ...prev, [newItem.id]: 100 }));
+    setDisplayUnits(prev => ({ ...prev, [newItem.id]: 'g' }));
+    setQuantityTexts(prev => ({ ...prev, [newItem.id]: '100' }));
     setAddModalVisible(false);
     setSearchQuery('');
   }
@@ -262,6 +325,14 @@ export default function EstimateScreen({ navigation, route }: Props) {
       const newItems = buildInitialItems(newResult, menuItems);
       setItems(newItems);
       setPortions(Object.fromEntries(newItems.map(i => [i.id, i.initialPortion])));
+      setCustomGrams(Object.fromEntries(newItems.map(i => [i.id, i.estimatedQuantityGrams ?? 100])));
+      setDisplayUnits(Object.fromEntries(newItems.map(i => [i.id, getDefaultUnit(i.name)])));
+      setQuantityTexts(Object.fromEntries(newItems.map(i => {
+        const unit = getDefaultUnit(i.name);
+        const g = i.estimatedQuantityGrams ?? 100;
+        return [i.id, String(round1(g / gramsPerUnit(unit, i.name, g)))];
+      })));
+      setUnitPickerOpen(null);
       setFeedbackText('');
       setHasReanalyzed(true);
     } catch (err) {
@@ -275,7 +346,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const totals = useMemo(() =>
     items.reduce(
       (acc, item) => {
-        const s = getScaled(item, getPortionFor(item.id));
+        const s = getScaled(item, getPortionFor(item.id), customGrams[item.id]);
         return {
           cal:     round1(acc.cal     + s.cal),
           protein: round1(acc.protein + s.protein),
@@ -286,13 +357,13 @@ export default function EstimateScreen({ navigation, route }: Props) {
       { cal: 0, protein: 0, carbs: 0, fat: 0 }
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, portions]
+    [items, portions, customGrams]
   );
 
   function handleLogMeal() {
     const mealItems: MacroItem[] = items.map(item => {
       const portion = getPortionFor(item.id);
-      const scaled = getScaled(item, portion);
+      const scaled = getScaled(item, portion, customGrams[item.id]);
       return { name: item.name, portion, ...scaled };
     });
     addMeal({ id: String(Date.now()), timestamp: new Date().toLocaleString(), items: mealItems, totals });
@@ -349,7 +420,10 @@ export default function EstimateScreen({ navigation, route }: Props) {
         ) : (
           items.map(item => {
             const portion = getPortionFor(item.id);
-            const scaled = getScaled(item, portion);
+            const baseG = customGrams[item.id] ?? item.estimatedQuantityGrams ?? 100;
+            const scaled = getScaled(item, portion, customGrams[item.id]);
+            const unit = displayUnits[item.id] ?? 'g';
+            const estG = item.estimatedQuantityGrams ?? 100;
             return (
               <Swipeable
                 key={item.id}
@@ -367,9 +441,52 @@ export default function EstimateScreen({ navigation, route }: Props) {
                 <View style={styles.itemCard}>
                   <Text style={styles.itemName}>{item.name}</Text>
                   {item.estimatedQuantityGrams != null && (
-                    <Text style={styles.quantityHint}>
-                      ~{Math.round(item.estimatedQuantityGrams * MULTIPLIERS[portion])}g · {portion}
-                    </Text>
+                    <View>
+                      <View style={styles.quantityRow}>
+                        <TextInput
+                          style={styles.quantityInput}
+                          keyboardType="decimal-pad"
+                          value={quantityTexts[item.id] ?? String(estG)}
+                          onChangeText={text => {
+                            setQuantityTexts(prev => ({ ...prev, [item.id]: text }));
+                            const val = parseFloat(text);
+                            if (!isNaN(val) && val > 0) {
+                              setCustomGrams(prev => ({
+                                ...prev,
+                                [item.id]: Math.max(val * gramsPerUnit(unit, item.name, estG), 0.5),
+                              }));
+                            }
+                          }}
+                          onFocus={() => setUnitPickerOpen(null)}
+                        />
+                        <TouchableOpacity
+                          style={styles.unitBtn}
+                          onPress={() => setUnitPickerOpen(prev => prev === item.id ? null : item.id)}
+                        >
+                          <Text style={styles.unitBtnText}>{unit} ▾</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {unitPickerOpen === item.id && (
+                        <View style={styles.unitOptions}>
+                          {ALL_UNITS.map(u => (
+                            <TouchableOpacity
+                              key={u}
+                              style={[styles.unitOption, unit === u && styles.unitOptionActive]}
+                              onPress={() => {
+                                const newText = String(round1(baseG / gramsPerUnit(u, item.name, estG)));
+                                setQuantityTexts(prev => ({ ...prev, [item.id]: newText }));
+                                setDisplayUnits(prev => ({ ...prev, [item.id]: u }));
+                                setUnitPickerOpen(null);
+                              }}
+                            >
+                              <Text style={[styles.unitOptionText, unit === u && styles.unitOptionTextActive]}>
+                                {u}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                    </View>
                   )}
                   {!item.manuallyAdded && item.confidence !== undefined && (
                     <View style={styles.confidenceRow}>
@@ -589,8 +706,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A', borderRadius: 12, padding: 12, marginBottom: 12,
     borderWidth: 1, borderColor: '#2A2A2A',
   },
-  itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 2 },
-  quantityHint: { fontSize: 12, color: '#00E5A0', marginBottom: 6 },
+  itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 6 },
+
+  quantityRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  quantityInput: {
+    width: 72, backgroundColor: '#2A2A2A', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 5,
+    fontSize: 14, color: '#FFFFFF', textAlign: 'right',
+  },
+  unitBtn: { backgroundColor: '#2A2A2A', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  unitBtnText: { fontSize: 13, fontWeight: '600', color: '#00E5A0' },
+  unitOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  unitOption: { backgroundColor: '#2A2A2A', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5 },
+  unitOptionActive: { backgroundColor: '#00E5A0' },
+  unitOptionText: { fontSize: 12, color: '#8A8A8A' },
+  unitOptionTextActive: { color: '#0F0F0F', fontWeight: '700' },
 
   confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   confidenceBarTrack: {

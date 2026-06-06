@@ -31,6 +31,76 @@ function extractJSONArray(text) {
   return JSON.parse(stripped.slice(start, end + 1));
 }
 
+// ─── AI response validation ──────────────────────────────────────────────────
+
+function clampNum(val, min, max, def) {
+  const n = typeof val === 'number' ? val : parseFloat(val);
+  if (!isFinite(n)) return def;
+  return Math.max(min, Math.min(max, n));
+}
+
+function validateAnalysisResult(raw) {
+  let parsed;
+  try {
+    parsed = extractJSON(raw);
+  } catch {
+    return { detectedItems: [], mode: 'generic', reason: 'parse_error', validated: true };
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return { detectedItems: [], mode: 'generic', reason: 'parse_error', validated: true };
+  }
+
+  const items = Array.isArray(parsed.detectedItems) ? parsed.detectedItems : [];
+
+  const sanitized = items
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const name = (typeof item.name === 'string' ? item.name : '').trim();
+      if (!name) return null;
+      const calories = clampNum(item.calories, 0, 5000, 0);
+      if (calories > 5000) return null;
+      return {
+        ...item,
+        name,
+        calories,
+        protein:  clampNum(item.protein,  0, 500, 0),
+        carbs:    clampNum(item.carbs,    0, 500, 0),
+        fat:      clampNum(item.fat,      0, 500, 0),
+        portionMultiplier:       clampNum(item.portionMultiplier,       0.1, 5.0, 1.0),
+        confidence:              clampNum(item.confidence,              0,   1,   0.7),
+        estimatedQuantityGrams:  clampNum(item.estimatedQuantityGrams,  1, 9999, 100),
+      };
+    })
+    .filter(Boolean);
+
+  return { ...parsed, detectedItems: sanitized, validated: true };
+}
+
+// Wraps an Anthropic messages.create call with 25s timeout + 1 retry on transient errors.
+async function callAnthropic(createArgs) {
+  const isTransient = (err) => {
+    const msg = (err?.message ?? '').toLowerCase();
+    return err?.status === 529 || msg.includes('overloaded') || msg.includes('network') || msg.includes('econnreset') || msg.includes('etimedout');
+  };
+
+  const attempt = () => Promise.race([
+    client.messages.create(createArgs),
+    new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error('AI timeout'), { timeout: true })), 25000)),
+  ]);
+
+  try {
+    return await attempt();
+  } catch (err) {
+    if (err.timeout || isTransient(err)) {
+      console.warn('[callAnthropic] transient error, retrying once:', err.message);
+      await new Promise(r => setTimeout(r, 2000));
+      return await attempt();
+    }
+    throw err;
+  }
+}
+
 // ─── Data sources ──────────────────────────────────────────────────────────
 
 async function searchOpenFoodFacts(query) {
@@ -225,22 +295,30 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
 
   try {
     console.log('[/analyze] Calling Anthropic API...');
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
-            { type: 'text', text: prompt },
-          ],
-        },
-      ],
-    });
+    let response;
+    try {
+      response = await callAnthropic({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
+              { type: 'text', text: prompt },
+            ],
+          },
+        ],
+      });
+    } catch (aiErr) {
+      if (aiErr.timeout) {
+        return res.status(504).json({ error: 'Analysis timed out', detectedItems: [], reason: 'timeout', validated: true });
+      }
+      throw aiErr;
+    }
     const raw = response.content[0]?.text ?? '';
     console.log('[/analyze] Raw response:', raw.slice(0, 200));
-    const parsed = extractJSON(raw);
+    const parsed = validateAnalysisResult(raw);
     console.log('[/analyze] items:', parsed.detectedItems?.length, 'reason:', parsed.reason ?? 'none');
     res.json(parsed);
   } catch (err) {
@@ -330,22 +408,30 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
 
   try {
     console.log('[/reanalyze] Calling Anthropic API...');
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
-            { type: 'text', text: prompt },
-          ],
-        },
-      ],
-    });
+    let response;
+    try {
+      response = await callAnthropic({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
+              { type: 'text', text: prompt },
+            ],
+          },
+        ],
+      });
+    } catch (aiErr) {
+      if (aiErr.timeout) {
+        return res.status(504).json({ error: 'Analysis timed out', detectedItems: [], reason: 'timeout', validated: true });
+      }
+      throw aiErr;
+    }
     const raw = response.content[0]?.text ?? '';
     console.log('[/reanalyze] Raw response:', raw.slice(0, 200));
-    const parsed = extractJSON(raw);
+    const parsed = validateAnalysisResult(raw);
     console.log('[/reanalyze] items:', parsed.detectedItems?.length);
     res.json(parsed);
   } catch (err) {

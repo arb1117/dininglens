@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem } from '../context/MealContext';
@@ -36,64 +37,68 @@ type NormalizedItem = {
   initialPortion: Portion;
 };
 
+function buildInitialItems(
+  analysisResult: Props['route']['params']['analysisResult'],
+  menuItems: ReturnType<typeof useMealContext>['menuItems']
+): NormalizedItem[] {
+  if (!analysisResult || analysisResult.detectedItems.length === 0) {
+    return menuItems.slice(0, 3).map((item, i) => ({
+      id: item.id ?? `fallback-${i}`,
+      name: item.name,
+      cal: item.calories,
+      protein: item.protein,
+      carbs: item.carbs,
+      fat: item.fat,
+      initialPortion: 'Normal' as Portion,
+    }));
+  }
+
+  if (analysisResult.mode === 'dining_hall') {
+    return analysisResult.detectedItems
+      .map(detected => {
+        const match = menuItems.find(
+          m => m.name.toLowerCase() === detected.name.toLowerCase()
+        );
+        if (!match) return null;
+        return {
+          id: match.id,
+          name: match.name,
+          cal: match.calories,
+          protein: match.protein,
+          carbs: match.carbs,
+          fat: match.fat,
+          initialPortion: multiplierToPortion(detected.portionMultiplier),
+        };
+      })
+      .filter((x): x is NormalizedItem => x !== null);
+  }
+
+  return analysisResult.detectedItems.map((item, i) => ({
+    id: `generic-${i}`,
+    name: item.name,
+    cal: item.calories ?? 0,
+    protein: item.protein ?? 0,
+    carbs: item.carbs ?? 0,
+    fat: item.fat ?? 0,
+    initialPortion: multiplierToPortion(item.portionMultiplier),
+  }));
+}
+
 export default function EstimateScreen({ navigation, route }: Props) {
   const { addMeal, menuItems, venue } = useMealContext();
   const { analysisResult } = route.params;
 
-  /**
-   * Resolve detected items into NormalizedItem[]:
-   *  - dining_hall mode: cross-reference names against menuItems from context
-   *  - generic mode: use calories/macros directly from API response
-   *  - fallback (no result): first 3 from menuItems
-   */
-  const detectedItems = useMemo<NormalizedItem[]>(() => {
-    if (!analysisResult || analysisResult.detectedItems.length === 0) {
-      return menuItems.slice(0, 3).map((item, i) => ({
-        id: item.id ?? `fallback-${i}`,
-        name: item.name,
-        cal: item.calories,
-        protein: item.protein,
-        carbs: item.carbs,
-        fat: item.fat,
-        initialPortion: 'Normal' as Portion,
-      }));
-    }
-
-    if (analysisResult.mode === 'dining_hall') {
-      return analysisResult.detectedItems
-        .map(detected => {
-          const match = menuItems.find(
-            m => m.name.toLowerCase() === detected.name.toLowerCase()
-          );
-          if (!match) return null;
-          return {
-            id: match.id,
-            name: match.name,
-            cal: match.calories,
-            protein: match.protein,
-            carbs: match.carbs,
-            fat: match.fat,
-            initialPortion: multiplierToPortion(detected.portionMultiplier),
-          };
-        })
-        .filter((x): x is NormalizedItem => x !== null);
-    }
-
-    // generic mode — use API data directly
-    return analysisResult.detectedItems.map((item, i) => ({
-      id: `generic-${i}`,
-      name: item.name,
-      cal: item.calories ?? 0,
-      protein: item.protein ?? 0,
-      carbs: item.carbs ?? 0,
-      fat: item.fat ?? 0,
-      initialPortion: multiplierToPortion(item.portionMultiplier),
-    }));
-  }, [analysisResult, menuItems]);
+  const [items, setItems] = useState<NormalizedItem[]>(() =>
+    buildInitialItems(analysisResult, menuItems)
+  );
 
   const [portions, setPortions] = useState<Record<string, Portion>>(
-    Object.fromEntries(detectedItems.map(i => [i.id, i.initialPortion]))
+    () => Object.fromEntries(
+      buildInitialItems(analysisResult, menuItems).map(i => [i.id, i.initialPortion])
+    )
   );
+
+  const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
 
   function getPortionFor(id: string): Portion { return portions[id] ?? 'Normal'; }
 
@@ -107,26 +112,40 @@ export default function EstimateScreen({ navigation, route }: Props) {
     };
   }
 
-  const totals = detectedItems.reduce(
-    (acc, item) => {
-      const s = getScaled(item, getPortionFor(item.id));
-      return {
-        cal:     round1(acc.cal     + s.cal),
-        protein: round1(acc.protein + s.protein),
-        carbs:   round1(acc.carbs   + s.carbs),
-        fat:     round1(acc.fat     + s.fat),
-      };
-    },
-    { cal: 0, protein: 0, carbs: 0, fat: 0 }
+  function removeItem(id: string) {
+    swipeableRefs.current[id]?.close();
+    setItems(prev => prev.filter(i => i.id !== id));
+    setPortions(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
+  const totals = useMemo(() =>
+    items.reduce(
+      (acc, item) => {
+        const s = getScaled(item, getPortionFor(item.id));
+        return {
+          cal:     round1(acc.cal     + s.cal),
+          protein: round1(acc.protein + s.protein),
+          carbs:   round1(acc.carbs   + s.carbs),
+          fat:     round1(acc.fat     + s.fat),
+        };
+      },
+      { cal: 0, protein: 0, carbs: 0, fat: 0 }
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, portions]
   );
 
   function handleLogMeal() {
-    const items: MacroItem[] = detectedItems.map(item => {
+    const mealItems: MacroItem[] = items.map(item => {
       const portion = getPortionFor(item.id);
       const scaled = getScaled(item, portion);
       return { name: item.name, portion, ...scaled };
     });
-    addMeal({ id: String(Date.now()), timestamp: new Date().toLocaleString(), items, totals });
+    addMeal({ id: String(Date.now()), timestamp: new Date().toLocaleString(), items: mealItems, totals });
     navigation.navigate('Camera');
   }
 
@@ -158,34 +177,54 @@ export default function EstimateScreen({ navigation, route }: Props) {
         {isFallback ? 'Menu Items' : 'Detected Items'}
       </Text>
 
-      {detectedItems.map(item => {
-        const portion = getPortionFor(item.id);
-        const scaled = getScaled(item, portion);
-        return (
-          <View key={item.id} style={styles.itemCard}>
-            <Text style={styles.itemName}>{item.name}</Text>
-            <View style={styles.portionRow}>
-              {PORTIONS.map(p => (
+      {items.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>No items — add items manually</Text>
+        </View>
+      ) : (
+        items.map(item => {
+          const portion = getPortionFor(item.id);
+          const scaled = getScaled(item, portion);
+          return (
+            <Swipeable
+              key={item.id}
+              ref={ref => { swipeableRefs.current[item.id] = ref; }}
+              renderRightActions={() => (
                 <TouchableOpacity
-                  key={p}
-                  style={[styles.portionBtn, portion === p && styles.portionBtnActive]}
-                  onPress={() => setPortions(prev => ({ ...prev, [item.id]: p }))}
+                  style={styles.removeAction}
+                  onPress={() => removeItem(item.id)}
                 >
-                  <Text style={[styles.portionBtnText, portion === p && styles.portionBtnTextActive]}>
-                    {p}
-                  </Text>
+                  <Text style={styles.removeActionText}>Remove</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-            <View style={styles.macroRow}>
-              <Text style={styles.macroText}>{scaled.cal} cal</Text>
-              <Text style={styles.macroText}>{scaled.protein}g protein</Text>
-              <Text style={styles.macroText}>{scaled.carbs}g carbs</Text>
-              <Text style={styles.macroText}>{scaled.fat}g fat</Text>
-            </View>
-          </View>
-        );
-      })}
+              )}
+              onSwipeableOpen={() => removeItem(item.id)}
+            >
+              <View style={styles.itemCard}>
+                <Text style={styles.itemName}>{item.name}</Text>
+                <View style={styles.portionRow}>
+                  {PORTIONS.map(p => (
+                    <TouchableOpacity
+                      key={p}
+                      style={[styles.portionBtn, portion === p && styles.portionBtnActive]}
+                      onPress={() => setPortions(prev => ({ ...prev, [item.id]: p }))}
+                    >
+                      <Text style={[styles.portionBtnText, portion === p && styles.portionBtnTextActive]}>
+                        {p}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.macroRow}>
+                  <Text style={styles.macroText}>{scaled.cal} cal</Text>
+                  <Text style={styles.macroText}>{scaled.protein}g protein</Text>
+                  <Text style={styles.macroText}>{scaled.carbs}g carbs</Text>
+                  <Text style={styles.macroText}>{scaled.fat}g fat</Text>
+                </View>
+              </View>
+            </Swipeable>
+          );
+        })
+      )}
 
       <View style={styles.totalsCard}>
         <Text style={styles.totalsTitle}>Meal Totals</Text>
@@ -247,6 +286,20 @@ const styles = StyleSheet.create({
     fontSize: 12, color: '#666', backgroundColor: '#ececec',
     borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
   },
+  removeAction: {
+    backgroundColor: '#c62828',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 90,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  removeActionText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  emptyCard: {
+    backgroundColor: '#f5f5f5', borderRadius: 12, padding: 24,
+    alignItems: 'center', marginBottom: 12,
+  },
+  emptyText: { fontSize: 14, color: '#888', fontStyle: 'italic' },
   totalsCard: { backgroundColor: '#500000', borderRadius: 14, padding: 20, marginTop: 8, marginBottom: 20 },
   totalsTitle: {
     color: '#fff', fontSize: 14, fontWeight: '700',

@@ -11,7 +11,16 @@ function MealCard({ meal }: { meal: LoggedMeal }) {
       onPress={() => setExpanded(e => !e)}
       activeOpacity={0.8}
     >
-      <Text style={styles.timestamp}>{meal.timestamp}</Text>
+      <View style={styles.cardHeader}>
+        <Text style={styles.timestamp}>{meal.timestamp}</Text>
+        <Text style={styles.itemCount}>{meal.items.length} item{meal.items.length !== 1 ? 's' : ''}</Text>
+      </View>
+
+      {!expanded && meal.items.length > 0 && (
+        <Text style={styles.itemsSummary} numberOfLines={1}>
+          {meal.items.map(i => i.name).join(', ')}
+        </Text>
+      )}
 
       {expanded && (
         <View style={styles.itemsContainer}>
@@ -92,7 +101,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: '#2A2A2A',
   },
-  timestamp: { fontSize: 12, color: '#8A8A8A', marginBottom: 12, fontWeight: '600' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  timestamp: { fontSize: 12, color: '#8A8A8A', fontWeight: '600' },
+  itemCount: { fontSize: 11, color: '#8A8A8A' },
+  itemsSummary: { fontSize: 13, color: '#8A8A8A', marginBottom: 10 },
 
   itemsContainer: { marginBottom: 12 },
   itemRow: {

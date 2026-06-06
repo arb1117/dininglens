@@ -41,7 +41,7 @@ export default function OnboardingScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#0F0F0F',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
@@ -49,22 +49,24 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 36,
     fontWeight: '800',
-    color: '#500000',
+    color: '#FFFFFF',
     marginBottom: 10,
   },
   subtitle: {
     fontSize: 16,
-    color: '#555',
+    color: '#8A8A8A',
     textAlign: 'center',
     marginBottom: 40,
   },
   featureBox: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#1A1A1A',
     borderRadius: 16,
     padding: 24,
     marginBottom: 40,
     width: '100%',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
   },
   featureIcon: {
     fontSize: 32,
@@ -73,17 +75,17 @@ const styles = StyleSheet.create({
   featureTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#222',
+    color: '#FFFFFF',
     marginBottom: 8,
   },
   featureBody: {
     fontSize: 14,
-    color: '#555',
+    color: '#8A8A8A',
     textAlign: 'center',
     lineHeight: 20,
   },
   button: {
-    backgroundColor: '#500000',
+    backgroundColor: '#00E5A0',
     borderRadius: 12,
     paddingVertical: 16,
     paddingHorizontal: 48,
@@ -92,7 +94,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   buttonText: {
-    color: '#fff',
+    color: '#0F0F0F',
     fontSize: 18,
     fontWeight: '700',
   },
@@ -100,7 +102,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   skipText: {
-    color: '#888',
+    color: '#8A8A8A',
     fontSize: 14,
   },
 });

@@ -32,7 +32,6 @@ export default function CameraScreen({ navigation }: Props) {
 
   const isDiningHallMode = diningHallStatus === 'active';
 
-  // Run GPS venue detection in background on mount — auto-enables dining hall mode if nearby
   useEffect(() => {
     detectVenue().then(detected => {
       if (detected && diningHallStatus === 'inactive') {
@@ -74,7 +73,6 @@ export default function CameraScreen({ navigation }: Props) {
 
       if (!photo?.base64) throw new Error('No image data');
 
-      // Only pass menu context when user has opted into dining hall mode
       const result = await analyzeImage(
         photo.base64,
         isDiningHallMode ? menuItems : undefined
@@ -90,12 +88,10 @@ export default function CameraScreen({ navigation }: Props) {
     }
   }
 
-  // ── Permission not yet determined ──────────────────────────
   if (!permission) {
-    return <View style={styles.center}><ActivityIndicator color="#500000" /></View>;
+    return <View style={styles.center}><ActivityIndicator color="#00E5A0" /></View>;
   }
 
-  // ── Permission denied ──────────────────────────────────────
   if (!permission.granted) {
     return (
       <SafeAreaView style={styles.permissionScreen}>
@@ -111,57 +107,55 @@ export default function CameraScreen({ navigation }: Props) {
     );
   }
 
-  // ── Camera ready ───────────────────────────────────────────
   return (
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back">
 
-        {/* Top overlay */}
-        <SafeAreaView style={styles.topOverlay}>
-          {/* Dining hall status banner / toggle */}
-          {diningHallStatus === 'inactive' && (
-            <TouchableOpacity style={styles.diningToggle} onPress={() => enableDiningHallModeForVenue()}>
-              <Text style={styles.diningToggleText}>🍽 Near a dining hall? Tap to enable</Text>
-            </TouchableOpacity>
-          )}
-
-          {diningHallStatus === 'loading' && (
-            <View style={styles.banner}>
-              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
-              <Text style={styles.bannerText}>Loading dining hall menu…</Text>
-            </View>
-          )}
-
-          {diningHallStatus === 'active' && venue && (
-            <View style={[styles.banner, styles.bannerFound]}>
-              <Text style={styles.bannerText} numberOfLines={1}>
+        {/* Active venue banner — slim top bar with teal background */}
+        {diningHallStatus === 'active' && venue && (
+          <SafeAreaView style={styles.venueBanner}>
+            <View style={styles.venueBannerContent}>
+              <Text style={styles.venueBannerText} numberOfLines={1}>
                 {'📍 '}
-                <Text style={styles.bannerVenue}>{venue.name}</Text>
-                {` — ${periodLabel} menu loaded`}
+                <Text style={styles.venueBannerName}>{venue.name}</Text>
+                {` — ${periodLabel}`}
               </Text>
-              <TouchableOpacity onPress={disableDiningHallMode} style={styles.bannerDismiss}>
-                <Text style={styles.bannerDismissText}>✕</Text>
+              <TouchableOpacity onPress={disableDiningHallMode} style={styles.venueBannerDismiss}>
+                <Text style={styles.venueBannerDismissText}>✕</Text>
               </TouchableOpacity>
             </View>
-          )}
+          </SafeAreaView>
+        )}
 
-          {errorBanner && (
-            <View style={styles.errorBanner}>
+        {/* Loading banner */}
+        {diningHallStatus === 'loading' && (
+          <SafeAreaView style={styles.loadingBanner}>
+            <View style={styles.loadingBannerContent}>
+              <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.loadingBannerText}>Loading dining hall menu…</Text>
+            </View>
+          </SafeAreaView>
+        )}
+
+        {/* Error banner */}
+        {errorBanner && (
+          <SafeAreaView style={styles.errorBannerWrap}>
+            <View style={styles.errorBannerContent}>
               <Text style={styles.errorBannerText}>{errorBanner}</Text>
             </View>
-          )}
-        </SafeAreaView>
+          </SafeAreaView>
+        )}
 
         {/* Analyzing overlay */}
         {analyzing && (
           <View style={styles.analyzingOverlay}>
             <ActivityIndicator size="large" color="#fff" />
-            <Text style={styles.analyzingText}>Analyzing meal…</Text>
+            <Text style={styles.analyzingText}>Analyzing meal...</Text>
           </View>
         )}
 
-        {/* Bottom controls */}
-        <SafeAreaView style={styles.bottomOverlay}>
+        {/* Shutter — centered, 80px from bottom */}
+        <View style={styles.shutterContainer} pointerEvents="box-none">
           <TouchableOpacity
             style={[styles.shutter, analyzing && styles.shutterDisabled]}
             onPress={handleShutter}
@@ -169,106 +163,117 @@ export default function CameraScreen({ navigation }: Props) {
           >
             <View style={styles.shutterInner} />
           </TouchableOpacity>
+        </View>
 
+        {/* Inactive venue chip — bottom-left */}
+        {diningHallStatus === 'inactive' && (
           <TouchableOpacity
-            style={styles.historyButton}
-            onPress={() => navigation.navigate('History')}
+            style={styles.venueChip}
+            onPress={() => enableDiningHallModeForVenue()}
           >
-            <Text style={styles.historyButtonText}>📋</Text>
+            <Text style={styles.venueChipText}>🍽 Dining hall?</Text>
           </TouchableOpacity>
-        </SafeAreaView>
+        )}
+
+        {/* History button — bottom-right */}
+        <TouchableOpacity
+          style={styles.historyButton}
+          onPress={() => navigation.navigate('History')}
+        >
+          <Text style={styles.historyButtonText}>📋</Text>
+        </TouchableOpacity>
 
       </CameraView>
     </View>
   );
 }
 
-const SHUTTER_SIZE = 72;
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F0F0F' },
 
-  topOverlay: {
-    paddingHorizontal: 12,
-    paddingTop: 8,
-  },
-
-  // Inactive dining hall toggle chip
-  diningToggle: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    marginBottom: 6,
-  },
-  diningToggleText: { fontSize: 13, color: 'rgba(255,255,255,0.85)' },
-
-  // Active/loading venue banner
-  banner: {
+  // Active venue banner — slim full-width top bar
+  venueBanner: { backgroundColor: '#00E5A0' },
+  venueBannerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 10,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    marginBottom: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
   },
-  bannerFound: { backgroundColor: 'rgba(46,125,50,0.85)' },
-  bannerText: { fontSize: 13, color: '#fff', flex: 1 },
-  bannerVenue: { fontWeight: '700' },
-  bannerDismiss: { paddingLeft: 10, paddingVertical: 2 },
-  bannerDismissText: { color: 'rgba(255,255,255,0.8)', fontSize: 14 },
+  venueBannerText: { flex: 1, fontSize: 13, color: '#0F0F0F' },
+  venueBannerName: { fontWeight: '700' },
+  venueBannerDismiss: { paddingLeft: 12 },
+  venueBannerDismissText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
 
-  errorBanner: {
-    backgroundColor: 'rgba(180,0,0,0.75)',
-    borderRadius: 10,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    marginBottom: 6,
+  // Loading banner
+  loadingBanner: { backgroundColor: 'rgba(0,0,0,0.55)' },
+  loadingBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
   },
+  loadingBannerText: { fontSize: 13, color: '#fff' },
+
+  // Error banner
+  errorBannerWrap: { backgroundColor: 'rgba(180,0,0,0.8)' },
+  errorBannerContent: { paddingHorizontal: 16, paddingVertical: 9 },
   errorBannerText: { fontSize: 13, color: '#fff', textAlign: 'center' },
 
+  // Analyzing overlay
   analyzingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 14,
   },
   analyzingText: { color: '#fff', fontSize: 17, fontWeight: '600' },
 
-  bottomOverlay: {
+  // Shutter — full-width container at bottom: 80 so button self-centers
+  shutterContainer: {
     position: 'absolute',
-    bottom: 0,
+    bottom: 80,
     left: 0,
     right: 0,
     alignItems: 'center',
-    paddingBottom: 32,
   },
   shutter: {
-    width: SHUTTER_SIZE,
-    height: SHUTTER_SIZE,
-    borderRadius: SHUTTER_SIZE / 2,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderWidth: 4,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 3,
     borderColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
   },
   shutterDisabled: { opacity: 0.4 },
   shutterInner: {
-    width: SHUTTER_SIZE - 18,
-    height: SHUTTER_SIZE - 18,
-    borderRadius: (SHUTTER_SIZE - 18) / 2,
-    backgroundColor: '#fff',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
+
+  // Inactive venue chip — bottom-left
+  venueChip: {
+    position: 'absolute',
+    left: 20,
+    bottom: 100,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+  },
+  venueChipText: { fontSize: 13, color: 'rgba(255,255,255,0.85)' },
+
+  // History button — bottom-right
   historyButton: {
     position: 'absolute',
-    right: 24,
-    bottom: 36,
+    right: 20,
+    bottom: 100,
     width: 48,
     height: 48,
     borderRadius: 24,
@@ -278,21 +283,22 @@ const styles = StyleSheet.create({
   },
   historyButtonText: { fontSize: 22 },
 
+  // Permission screen
   permissionScreen: {
-    flex: 1, backgroundColor: '#fff',
+    flex: 1, backgroundColor: '#0F0F0F',
     alignItems: 'center', justifyContent: 'center', padding: 32,
   },
   permissionTitle: {
-    fontSize: 22, fontWeight: '800', color: '#500000',
+    fontSize: 22, fontWeight: '800', color: '#FFFFFF',
     marginBottom: 16, textAlign: 'center',
   },
   permissionBody: {
-    fontSize: 15, color: '#555', textAlign: 'center',
+    fontSize: 15, color: '#8A8A8A', textAlign: 'center',
     lineHeight: 22, marginBottom: 32,
   },
   permissionButton: {
-    backgroundColor: '#500000', borderRadius: 12,
+    backgroundColor: '#00E5A0', borderRadius: 12,
     paddingVertical: 16, paddingHorizontal: 32,
   },
-  permissionButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  permissionButtonText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
 });

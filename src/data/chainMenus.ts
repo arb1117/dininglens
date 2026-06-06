@@ -93,6 +93,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Footlong Meatball Marinara",         calories: 960,  protein: 46.0, carbs: 102.0, fat: 40.0, serving: "12 inch" },
     { name: "Footlong Tuna",                      calories: 940,  protein: 44.0, carbs: 80.0, fat: 50.0, serving: "12 inch" },
     { name: "Avocado (add-on)",                   calories: 60,   protein: 1.0,  carbs: 3.0,  fat: 5.0,  serving: "1 serving" },
+    { name: "6\" Roast Beef",                       calories: 320,  protein: 23.0, carbs: 40.0, fat: 7.0,  serving: "6 inch" },
+    { name: "6\" BLT",                              calories: 360,  protein: 18.0, carbs: 40.0, fat: 14.0, serving: "6 inch" },
+    { name: "6\" Rotisserie-Style Chicken",          calories: 350,  protein: 29.0, carbs: 40.0, fat: 8.0,  serving: "6 inch" },
+    { name: "Footlong Turkey Breast",               calories: 560,  protein: 36.0, carbs: 80.0, fat: 10.0, serving: "12 inch" },
+    { name: "Chocolate Chip Cookie",                calories: 220,  protein: 2.0,  carbs: 30.0, fat: 10.0, serving: "1 cookie" },
   ],
 
   "Taco Bell": [
@@ -111,6 +116,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Cinnamon Twists",                    calories: 170,  protein: 1.0,  carbs: 26.0, fat: 7.0,  serving: "1 order" },
     { name: "Black Beans & Rice",                 calories: 180,  protein: 5.0,  carbs: 32.0, fat: 4.0,  serving: "1 order" },
     { name: "Breakfast Crunchwrap (Bacon)",       calories: 650,  protein: 22.0, carbs: 63.0, fat: 34.0, serving: "1 wrap" },
+    { name: "Cheesy Double Beef Burrito",          calories: 450,  protein: 19.0, carbs: 52.0, fat: 18.0, serving: "1 burrito" },
+    { name: "Nacho Fries (Regular)",               calories: 320,  protein: 5.0,  carbs: 40.0, fat: 17.0, serving: "1 order" },
+    { name: "Triple Layer Nachos",                 calories: 340,  protein: 8.0,  carbs: 43.0, fat: 16.0, serving: "1 order" },
+    { name: "Fiesta Veggie Burrito",               calories: 470,  protein: 17.0, carbs: 73.0, fat: 13.0, serving: "1 burrito" },
+    { name: "Mini Skillet Bowl (Breakfast)",       calories: 330,  protein: 12.0, carbs: 33.0, fat: 18.0, serving: "1 bowl" },
   ],
 
   "Wendy's": [
@@ -130,6 +140,10 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Baked Potato (Plain)",               calories: 270,  protein: 7.0,  carbs: 61.0, fat: 0.0,  serving: "1 potato" },
     { name: "Chili (Small)",                      calories: 170,  protein: 15.0, carbs: 15.0, fat: 5.0,  serving: "1 small" },
     { name: "Son of Baconator",                   calories: 660,  protein: 38.0, carbs: 35.0, fat: 40.0, serving: "1 sandwich" },
+    { name: "Breakfast Baconator",                 calories: 730,  protein: 36.0, carbs: 43.0, fat: 45.0, serving: "1 sandwich" },
+    { name: "Chicken Tenders (4pc)",               calories: 580,  protein: 37.0, carbs: 44.0, fat: 25.0, serving: "4 pieces" },
+    { name: "Large Fries",                         calories: 520,  protein: 7.0,  carbs: 66.0, fat: 24.0, serving: "1 large" },
+    { name: "Pretzel Bacon Pub Burger",            calories: 880,  protein: 48.0, carbs: 62.0, fat: 46.0, serving: "1 burger" },
   ],
 
   "Burger King": [
@@ -148,6 +162,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Sausage Egg & Cheese Biscuit",       calories: 470,  protein: 18.0, carbs: 33.0, fat: 30.0, serving: "1 sandwich" },
     { name: "Hash Browns",                        calories: 250,  protein: 2.0,  carbs: 26.0, fat: 16.0, serving: "1 serving" },
     { name: "4pc Chicken Nuggets",                calories: 170,  protein: 9.0,  carbs: 10.0, fat: 10.0, serving: "4 pieces" },
+    { name: "Whopper Jr.",                         calories: 330,  protein: 15.0, carbs: 33.0, fat: 16.0, serving: "1 burger" },
+    { name: "Chicken Jr. Sandwich",               calories: 360,  protein: 16.0, carbs: 38.0, fat: 15.0, serving: "1 sandwich" },
+    { name: "BK Royal Crispy Chicken",             calories: 660,  protein: 32.0, carbs: 56.0, fat: 36.0, serving: "1 sandwich" },
+    { name: "French Toast Sticks (5pc)",           calories: 310,  protein: 5.0,  carbs: 44.0, fat: 12.0, serving: "5 pieces" },
+    { name: "Vanilla Shake (Medium)",              calories: 580,  protein: 14.0, carbs: 91.0, fat: 17.0, serving: "1 medium" },
   ],
 
   "Starbucks": [
@@ -184,6 +203,16 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Greek Salad",                        calories: 430,  protein: 12.0, carbs: 24.0, fat: 33.0, serving: "1 salad" },
     { name: "Bagel with Cream Cheese",            calories: 430,  protein: 13.0, carbs: 68.0, fat: 13.0, serving: "1 bagel" },
     { name: "Green Smoothie",                     calories: 270,  protein: 5.0,  carbs: 63.0, fat: 1.0,  serving: "1 smoothie" },
+    { name: "Tomato Soup (Bowl)",                  calories: 290,  protein: 7.0,  carbs: 40.0, fat: 12.0, serving: "1 bowl" },
+    { name: "French Onion Soup (Bowl)",            calories: 290,  protein: 11.0, carbs: 38.0, fat: 11.0, serving: "1 bowl" },
+    { name: "Caesar Salad with Chicken",           calories: 560,  protein: 43.0, carbs: 24.0, fat: 31.0, serving: "1 salad" },
+    { name: "Mediterranean Veggie Sandwich",       calories: 530,  protein: 19.0, carbs: 72.0, fat: 17.0, serving: "1 sandwich" },
+    { name: "Turkey Breast Sandwich",              calories: 440,  protein: 32.0, carbs: 48.0, fat: 13.0, serving: "1 sandwich" },
+    { name: "Asian Sesame Salad with Chicken",     calories: 480,  protein: 37.0, carbs: 38.0, fat: 19.0, serving: "1 salad" },
+    { name: "Whole Grain Bagel",                   calories: 270,  protein: 11.0, carbs: 55.0, fat: 3.0,  serving: "1 bagel" },
+    { name: "Cinnamon Crunch Bagel",               calories: 420,  protein: 10.0, carbs: 74.0, fat: 11.0, serving: "1 bagel" },
+    { name: "Chocolate Chipper Cookie",            calories: 440,  protein: 5.0,  carbs: 58.0, fat: 22.0, serving: "1 cookie" },
+    { name: "Lemon Poppy Seed Muffin",             calories: 470,  protein: 7.0,  carbs: 70.0, fat: 19.0, serving: "1 muffin" },
   ],
 
   "Panda Express": [
@@ -197,6 +226,16 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Fried Rice",                         calories: 520,  protein: 11.0, carbs: 85.0, fat: 16.0, serving: "1 serving" },
     { name: "Super Greens",                       calories: 90,   protein: 6.0,  carbs: 11.0, fat: 3.0,  serving: "1 serving" },
     { name: "Cream Cheese Rangoon (3pc)",         calories: 190,  protein: 5.0,  carbs: 21.0, fat: 10.0, serving: "3 pieces" },
+    { name: "Sweet Fire Chicken Breast",           calories: 380,  protein: 25.0, carbs: 48.0, fat: 10.0, serving: "1 serving" },
+    { name: "Grilled Teriyaki Chicken",            calories: 300,  protein: 36.0, carbs: 8.0,  fat: 13.0, serving: "1 serving" },
+    { name: "Honey Walnut Shrimp",                 calories: 430,  protein: 13.0, carbs: 35.0, fat: 26.0, serving: "1 serving" },
+    { name: "Mushroom Chicken",                    calories: 220,  protein: 13.0, carbs: 13.0, fat: 13.0, serving: "1 serving" },
+    { name: "Steamed White Rice",                  calories: 380,  protein: 7.0,  carbs: 85.0, fat: 0.0,  serving: "1 serving" },
+    { name: "Brown Steamed Rice",                  calories: 380,  protein: 8.0,  carbs: 86.0, fat: 1.0,  serving: "1 serving" },
+    { name: "Mixed Vegetables",                    calories: 70,   protein: 3.0,  carbs: 13.0, fat: 0.0,  serving: "1 serving" },
+    { name: "Egg Roll (1pc)",                      calories: 200,  protein: 5.0,  carbs: 20.0, fat: 10.0, serving: "1 piece" },
+    { name: "Wonton Soup",                         calories: 80,   protein: 4.0,  carbs: 12.0, fat: 2.0,  serving: "1 bowl" },
+    { name: "Fortune Cookie",                      calories: 30,   protein: 0.0,  carbs: 7.0,  fat: 0.0,  serving: "1 cookie" },
   ],
 
   "Five Guys": [
@@ -210,6 +249,16 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Regular Fries",                      calories: 953,  protein: 17.0, carbs: 131.0, fat: 41.0, serving: "1 regular" },
     { name: "Cajun Style Fries",                  calories: 953,  protein: 17.0, carbs: 130.0, fat: 41.0, serving: "1 regular" },
     { name: "Chocolate Milkshake (Regular)",      calories: 1000, protein: 25.0, carbs: 140.0, fat: 44.0, serving: "1 regular" },
+    { name: "Hamburger",                           calories: 700,  protein: 38.0, carbs: 39.0, fat: 43.0, serving: "1 burger" },
+    { name: "Little Bacon Cheeseburger",           calories: 610,  protein: 32.0, carbs: 39.0, fat: 35.0, serving: "1 burger" },
+    { name: "Bacon Burger",                        calories: 780,  protein: 43.0, carbs: 39.0, fat: 45.0, serving: "1 burger" },
+    { name: "BLT Sandwich",                        calories: 390,  protein: 11.0, carbs: 26.0, fat: 28.0, serving: "1 sandwich" },
+    { name: "Small Fries",                         calories: 531,  protein: 9.0,  carbs: 72.0, fat: 23.0, serving: "1 small" },
+    { name: "Small Cajun Fries",                   calories: 531,  protein: 9.0,  carbs: 71.0, fat: 23.0, serving: "1 small" },
+    { name: "Cheese Dog",                          calories: 430,  protein: 18.0, carbs: 27.0, fat: 28.0, serving: "1 hot dog" },
+    { name: "Bacon Dog",                           calories: 415,  protein: 16.0, carbs: 26.0, fat: 27.0, serving: "1 hot dog" },
+    { name: "Strawberry Milkshake (Regular)",      calories: 970,  protein: 24.0, carbs: 148.0, fat: 34.0, serving: "1 regular" },
+    { name: "Peanut Butter Milkshake (Regular)",   calories: 1170, protein: 31.0, carbs: 148.0, fat: 56.0, serving: "1 regular" },
   ],
 
   "Raising Cane's": [
@@ -223,6 +272,16 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Cole Slaw",                          calories: 130,  protein: 1.0,  carbs: 15.0, fat: 8.0,  serving: "1 serving" },
     { name: "Cane's Sauce",                       calories: 190,  protein: 0.0,  carbs: 3.0,  fat: 20.0, serving: "2 oz" },
     { name: "Lemonade (22oz)",                    calories: 230,  protein: 0.0,  carbs: 59.0, fat: 0.0,  serving: "22 fl oz" },
+    { name: "Crinkle-Cut Fries (Large)",           calories: 400,  protein: 6.0,  carbs: 52.0, fat: 19.0, serving: "1 large" },
+    { name: "Texas Toast (2 slices)",              calories: 200,  protein: 6.0,  carbs: 36.0, fat: 4.0,  serving: "2 slices" },
+    { name: "Cole Slaw (Large)",                   calories: 240,  protein: 2.0,  carbs: 28.0, fat: 15.0, serving: "1 large" },
+    { name: "Sweet Tea (22oz)",                    calories: 100,  protein: 0.0,  carbs: 26.0, fat: 0.0,  serving: "22 fl oz" },
+    { name: "Lemonade (Large 32oz)",               calories: 380,  protein: 0.0,  carbs: 98.0, fat: 0.0,  serving: "32 fl oz" },
+    { name: "2 Chicken Fingers",                   calories: 290,  protein: 28.0, carbs: 20.0, fat: 10.0, serving: "2 fingers" },
+    { name: "Sandwich Combo (4 fingers)",          calories: 1310, protein: 61.0, carbs: 156.0, fat: 46.0, serving: "1 combo" },
+    { name: "Kids Combo (3 fingers)",              calories: 760,  protein: 44.0, carbs: 67.0, fat: 27.0, serving: "1 combo" },
+    { name: "Strawberry Lemonade (22oz)",          calories: 240,  protein: 0.0,  carbs: 60.0, fat: 0.0,  serving: "22 fl oz" },
+    { name: "Country Gravy Dipping Sauce",         calories: 50,   protein: 0.0,  carbs: 6.0,  fat: 3.0,  serving: "1 oz" },
   ],
 
   "Whataburger": [
@@ -236,6 +295,16 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Medium Onion Rings",                 calories: 420,  protein: 6.0,  carbs: 59.0, fat: 19.0, serving: "1 medium" },
     { name: "Small Chocolate Shake",              calories: 540,  protein: 9.0,  carbs: 83.0, fat: 20.0, serving: "1 small" },
     { name: "Apple & Cranberry Salad (no chicken)", calories: 220, protein: 4.0, carbs: 38.0, fat: 7.0,  serving: "1 salad" },
+    { name: "Avocado Bacon Burger",                calories: 780,  protein: 40.0, carbs: 62.0, fat: 41.0, serving: "1 burger" },
+    { name: "Mushroom Swiss Burger",               calories: 700,  protein: 38.0, carbs: 61.0, fat: 33.0, serving: "1 burger" },
+    { name: "Green Chile Double Burger",           calories: 860,  protein: 51.0, carbs: 61.0, fat: 44.0, serving: "1 burger" },
+    { name: "Whatachick'n Strips (3pc)",           calories: 660,  protein: 35.0, carbs: 59.0, fat: 30.0, serving: "3 strips" },
+    { name: "Sausage, Egg & Cheese Biscuit",       calories: 740,  protein: 25.0, carbs: 53.0, fat: 49.0, serving: "1 sandwich" },
+    { name: "Hash Brown Sticks (5pc)",             calories: 260,  protein: 3.0,  carbs: 32.0, fat: 13.0, serving: "5 pieces" },
+    { name: "Cinnamon Roll",                       calories: 400,  protein: 6.0,  carbs: 62.0, fat: 15.0, serving: "1 roll" },
+    { name: "Chocolate Shake (Medium)",            calories: 780,  protein: 15.0, carbs: 130.0, fat: 25.0, serving: "1 medium" },
+    { name: "Vanilla Shake (Medium)",              calories: 790,  protein: 17.0, carbs: 133.0, fat: 25.0, serving: "1 medium" },
+    { name: "Apple Pie",                           calories: 240,  protein: 2.0,  carbs: 33.0, fat: 11.0, serving: "1 pie" },
   ],
 
   "Shake Shack": [
@@ -249,6 +318,16 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Cheese Fries",                       calories: 640,  protein: 15.0, carbs: 74.0, fat: 32.0, serving: "1 regular" },
     { name: "Vanilla Shake",                      calories: 660,  protein: 14.0, carbs: 91.0, fat: 27.0, serving: "1 regular" },
     { name: "Chocolate Shake",                    calories: 690,  protein: 14.0, carbs: 98.0, fat: 26.0, serving: "1 regular" },
+    { name: "Stack Burger (Double)",               calories: 920,  protein: 56.0, carbs: 44.0, fat: 62.0, serving: "1 burger" },
+    { name: "Avocado Bacon Burger",                calories: 660,  protein: 34.0, carbs: 43.0, fat: 43.0, serving: "1 burger" },
+    { name: "Shack Stack",                         calories: 790,  protein: 38.0, carbs: 52.0, fat: 50.0, serving: "1 burger" },
+    { name: "Spicy Chick'n Shack",                 calories: 640,  protein: 29.0, carbs: 57.0, fat: 33.0, serving: "1 sandwich" },
+    { name: "Chick'n Bites (6pc)",                 calories: 440,  protein: 27.0, carbs: 36.0, fat: 19.0, serving: "6 pieces" },
+    { name: "Hot Dog (all beef)",                  calories: 450,  protein: 17.0, carbs: 30.0, fat: 29.0, serving: "1 hot dog" },
+    { name: "Flat-Top Dog",                        calories: 490,  protein: 19.0, carbs: 35.0, fat: 31.0, serving: "1 hot dog" },
+    { name: "Fries (Large)",                       calories: 640,  protein: 10.0, carbs: 90.0, fat: 27.0, serving: "1 large" },
+    { name: "Black & White Shake",                 calories: 700,  protein: 15.0, carbs: 98.0, fat: 27.0, serving: "1 regular" },
+    { name: "Lemon Shake",                         calories: 640,  protein: 11.0, carbs: 89.0, fat: 26.0, serving: "1 regular" },
   ],
 
   "Wingstop": [
@@ -262,6 +341,16 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Cajun Corn (2 cobs)",                calories: 500,  protein: 8.0,  carbs: 60.0, fat: 30.0, serving: "2 cobs" },
     { name: "Ranch Dip",                          calories: 180,  protein: 1.0,  carbs: 2.0,  fat: 19.0, serving: "2 oz" },
     { name: "Voodoo Fries",                       calories: 600,  protein: 12.0, carbs: 75.0, fat: 30.0, serving: "1 regular" },
+    { name: "Hickory Smoked BBQ Wings (6pc)",      calories: 440,  protein: 34.0, carbs: 12.0, fat: 29.0, serving: "6 wings" },
+    { name: "Classic (Buffalo) Wings (6pc)",       calories: 400,  protein: 34.0, carbs: 4.0,  fat: 27.0, serving: "6 wings" },
+    { name: "Hawaiian Wings (6pc)",                calories: 470,  protein: 34.0, carbs: 20.0, fat: 27.0, serving: "6 wings" },
+    { name: "Atomic Wings (6pc)",                  calories: 420,  protein: 34.0, carbs: 5.0,  fat: 28.0, serving: "6 wings" },
+    { name: "Chicken Tenders (5pc)",               calories: 400,  protein: 39.0, carbs: 24.0, fat: 16.0, serving: "5 pieces" },
+    { name: "Large Fries",                         calories: 590,  protein: 8.0,  carbs: 85.0, fat: 25.0, serving: "1 large" },
+    { name: "Blue Cheese Dip",                     calories: 290,  protein: 2.0,  carbs: 2.0,  fat: 30.0, serving: "2 oz" },
+    { name: "Cheese Sauce",                        calories: 210,  protein: 4.0,  carbs: 11.0, fat: 17.0, serving: "2 oz" },
+    { name: "Boneless Wings (5pc) Classic",        calories: 310,  protein: 19.0, carbs: 26.0, fat: 13.0, serving: "5 pieces" },
+    { name: "Seasoned Rice",                       calories: 350,  protein: 7.0,  carbs: 59.0, fat: 11.0, serving: "1 serving" },
   ],
 
   // ── NEW CHAINS ────────────────────────────────────────────────────────────
@@ -285,6 +374,8 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Muffin – Blueberry",                 calories: 460,  protein: 7.0,  carbs: 68.0, fat: 19.0, serving: "1 muffin" },
     { name: "Avocado Toast",                      calories: 270,  protein: 9.0,  carbs: 31.0, fat: 13.0, serving: "1 slice" },
     { name: "Strawberry Coolatta (Small)",        calories: 260,  protein: 0.0,  carbs: 65.0, fat: 0.0,  serving: "16 fl oz" },
+    { name: "Butter Pecan Iced Coffee (Medium)",   calories: 250,  protein: 3.0,  carbs: 45.0, fat: 8.0,  serving: "24 fl oz" },
+    { name: "Pumpkin Spice Latte (Hot, Medium)",   calories: 270,  protein: 9.0,  carbs: 44.0, fat: 7.0,  serving: "14 fl oz" },
   ],
 
   "Jersey Mike's": [
@@ -303,6 +394,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Chips",                              calories: 140,  protein: 2.0,  carbs: 19.0, fat: 7.0,  serving: "1 bag" },
     { name: "Cookie – Chocolate Chip",            calories: 320,  protein: 3.0,  carbs: 42.0, fat: 16.0, serving: "1 cookie" },
     { name: "Giant #13 Original Italian",         calories: 1424, protein: 76.0, carbs: 116.0, fat: 68.0, serving: "1 giant" },
+    { name: "#3 Tuna Fish (Regular)",              calories: 670,  protein: 36.0, carbs: 58.0, fat: 31.0, serving: "1 regular" },
+    { name: "#66 Portabella Chicken Sub (Regular)", calories: 651, protein: 29.0, carbs: 64.0, fat: 29.0, serving: "1 regular" },
+    { name: "Mini #17 Mike's Famous Philly",       calories: 410,  protein: 28.0, carbs: 30.0, fat: 17.0, serving: "1 mini" },
+    { name: "#8 Club Sub (Regular)",               calories: 651,  protein: 40.0, carbs: 58.0, fat: 24.0, serving: "1 regular" },
+    { name: "Brownie",                             calories: 320,  protein: 3.0,  carbs: 42.0, fat: 16.0, serving: "1 brownie" },
   ],
 
   "Jimmy John's": [
@@ -322,6 +418,10 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Chips",                              calories: 150,  protein: 2.0,  carbs: 20.0, fat: 7.0,  serving: "1 bag" },
     { name: "Brownie",                            calories: 280,  protein: 3.0,  carbs: 39.0, fat: 14.0, serving: "1 brownie" },
     { name: "Cookie – Sugar",                     calories: 430,  protein: 5.0,  carbs: 65.0, fat: 18.0, serving: "1 cookie" },
+    { name: "#4 Turkey Tom",                       calories: 502,  protein: 31.0, carbs: 50.0, fat: 17.0, serving: "1 sandwich" },
+    { name: "#8 Billy Club (Ham & Roast Beef)",    calories: 632,  protein: 44.0, carbs: 52.0, fat: 22.0, serving: "1 sandwich" },
+    { name: "#10 Hunter's Club (Roast Beef)",      calories: 565,  protein: 39.0, carbs: 51.0, fat: 20.0, serving: "1 sandwich" },
+    { name: "#5 Vito (Salami & Capicola)",         calories: 591,  protein: 31.0, carbs: 51.0, fat: 28.0, serving: "1 sandwich" },
   ],
 
   "Smoothie King": [
@@ -340,6 +440,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Veggie Pineapple Spinach (20 oz)",   calories: 230,  protein: 4.0,  carbs: 53.0, fat: 1.0,  serving: "20 fl oz" },
     { name: "Pure Recharge Mango (20 oz)",        calories: 210,  protein: 1.0,  carbs: 52.0, fat: 0.0,  serving: "20 fl oz" },
     { name: "Keto Champ Berry (20 oz)",           calories: 320,  protein: 11.0, carbs: 9.0,  fat: 26.0, serving: "20 fl oz" },
+    { name: "Peanut Power Plus Chocolate (20 oz)", calories: 560,  protein: 26.0, carbs: 70.0, fat: 20.0, serving: "20 fl oz" },
+    { name: "Slim & Trim Vanilla (20 oz)",         calories: 290,  protein: 26.0, carbs: 42.0, fat: 4.0,  serving: "20 fl oz" },
+    { name: "Mango Keto Champ (20 oz)",            calories: 320,  protein: 11.0, carbs: 10.0, fat: 26.0, serving: "20 fl oz" },
+    { name: "Muscle Punch Plus (20 oz)",           calories: 390,  protein: 26.0, carbs: 60.0, fat: 6.0,  serving: "20 fl oz" },
+    { name: "Green Tea Tango (20 oz)",             calories: 230,  protein: 3.0,  carbs: 51.0, fat: 2.0,  serving: "20 fl oz" },
   ],
 
   "Jamba Juice": [
@@ -358,6 +463,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Apple Cinnamon Pretzel",             calories: 410,  protein: 9.0,  carbs: 71.0, fat: 11.0, serving: "1 pretzel" },
     { name: "Blueberry Oat Crumble",              calories: 430,  protein: 7.0,  carbs: 76.0, fat: 13.0, serving: "1 piece" },
     { name: "Watermelon Breeze (Original 24 oz)", calories: 260,  protein: 2.0,  carbs: 62.0, fat: 0.0,  serving: "24 fl oz" },
+    { name: "Passion Orange Guava (Original 24 oz)", calories: 320, protein: 2.0, carbs: 76.0, fat: 0.0,  serving: "24 fl oz" },
+    { name: "Razzmatazz (Original 24 oz)",         calories: 340,  protein: 3.0,  carbs: 79.0, fat: 0.0,  serving: "24 fl oz" },
+    { name: "Banana Berry (Original 24 oz)",       calories: 420,  protein: 8.0,  carbs: 90.0, fat: 2.0,  serving: "24 fl oz" },
+    { name: "Orange Dream Machine (Original 24 oz)", calories: 360, protein: 7.0, carbs: 73.0, fat: 4.0,  serving: "24 fl oz" },
+    { name: "Chocolate Moo'd (Original 24 oz)",    calories: 560,  protein: 12.0, carbs: 107.0, fat: 12.0, serving: "24 fl oz" },
   ],
 
   "Culver's": [
@@ -377,6 +487,10 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Concrete Mixer – Oreo Volcano (Regular)", calories: 830, protein: 17.0, carbs: 101.0, fat: 40.0, serving: "1 regular" },
     { name: "Chocolate Shake (Regular)",          calories: 640,  protein: 14.0, carbs: 86.0, fat: 27.0, serving: "1 regular" },
     { name: "Broccoli Cheddar Soup (Cup)",        calories: 240,  protein: 8.0,  carbs: 18.0, fat: 15.0, serving: "1 cup" },
+    { name: "ButterBurger Cheese (Triple)",        calories: 750,  protein: 50.0, carbs: 34.0, fat: 46.0, serving: "1 burger" },
+    { name: "Grilled Chicken with Bacon",          calories: 460,  protein: 41.0, carbs: 34.0, fat: 18.0, serving: "1 sandwich" },
+    { name: "Cod Dinner (2pc)",                    calories: 470,  protein: 20.0, carbs: 43.0, fat: 23.0, serving: "2 pieces" },
+    { name: "Turtle Sundae",                       calories: 480,  protein: 6.0,  carbs: 71.0, fat: 18.0, serving: "1 sundae" },
   ],
 
   "Sonic Drive-In": [
@@ -396,6 +510,10 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Slush (Medium)",                     calories: 220,  protein: 0.0,  carbs: 56.0, fat: 0.0,  serving: "20 fl oz" },
     { name: "Mozzarella Sticks (5pc)",            calories: 430,  protein: 18.0, carbs: 37.0, fat: 22.0, serving: "5 pieces" },
     { name: "Breakfast Burrito (Sausage Egg & Cheese)", calories: 460, protein: 19.0, carbs: 34.0, fat: 27.0, serving: "1 burrito" },
+    { name: "SuperSONIC Double w/ Mustard",         calories: 830,  protein: 45.0, carbs: 46.0, fat: 50.0, serving: "1 burger" },
+    { name: "Footlong Classic Chili Cheese Dog",    calories: 540,  protein: 20.0, carbs: 44.0, fat: 31.0, serving: "1 hot dog" },
+    { name: "Chicken Tenders (3pc)",               calories: 400,  protein: 28.0, carbs: 35.0, fat: 17.0, serving: "3 pieces" },
+    { name: "Large Tots",                          calories: 530,  protein: 5.0,  carbs: 66.0, fat: 27.0, serving: "1 large" },
   ],
 
   "Dairy Queen": [
@@ -415,6 +533,10 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Chocolate Shake (Medium)",           calories: 640,  protein: 14.0, carbs: 98.0, fat: 18.0, serving: "1 medium" },
     { name: "Banana Split",                       calories: 510,  protein: 8.0,  carbs: 96.0, fat: 11.0, serving: "1 dessert" },
     { name: "Hot Fudge Sundae (Medium)",          calories: 450,  protein: 8.0,  carbs: 74.0, fat: 13.0, serving: "1 medium" },
+    { name: "Chicken Strip Basket (6pc)",          calories: 1430, protein: 55.0, carbs: 145.0, fat: 64.0, serving: "1 basket" },
+    { name: "Ultimate Bacon Cheeseburger",         calories: 810,  protein: 48.0, carbs: 47.0, fat: 50.0, serving: "1 burger" },
+    { name: "Strawberry Cheesequake Blizzard (Medium)", calories: 680, protein: 14.0, carbs: 95.0, fat: 27.0, serving: "1 medium" },
+    { name: "Chocolate Xtreme Blizzard (Medium)",  calories: 900,  protein: 17.0, carbs: 128.0, fat: 38.0, serving: "1 medium" },
   ],
 
   "Olive Garden": [
@@ -434,6 +556,10 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Tiramisu",                           calories: 470,  protein: 8.0,  carbs: 50.0, fat: 26.0, serving: "1 piece" },
     { name: "Chocolate Brownie Lasagna",          calories: 490,  protein: 6.0,  carbs: 68.0, fat: 23.0, serving: "1 piece" },
     { name: "Stuffed Mushrooms (Appetizer)",      calories: 410,  protein: 15.0, carbs: 26.0, fat: 28.0, serving: "1 order" },
+    { name: "Seafood Alfredo",                     calories: 1300, protein: 56.0, carbs: 113.0, fat: 68.0, serving: "1 plate" },
+    { name: "Grilled Salmon",                      calories: 460,  protein: 53.0, carbs: 1.0,  fat: 26.0, serving: "1 plate" },
+    { name: "Five Cheese Ziti al Forno",           calories: 1050, protein: 45.0, carbs: 123.0, fat: 36.0, serving: "1 plate" },
+    { name: "Black Tie Mousse Cake",               calories: 530,  protein: 7.0,  carbs: 65.0, fat: 27.0, serving: "1 slice" },
   ],
 
   "Applebee's": [
@@ -452,6 +578,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "French Onion Soup",                  calories: 340,  protein: 15.0, carbs: 30.0, fat: 18.0, serving: "1 bowl" },
     { name: "Triple Chocolate Meltdown",          calories: 990,  protein: 10.0, carbs: 131.0, fat: 49.0, serving: "1 dessert" },
     { name: "Neighborhood Nachos (Half Order)",   calories: 840,  protein: 35.0, carbs: 69.0, fat: 47.0, serving: "1 half order" },
+    { name: "Quesadilla Burger",                   calories: 1360, protein: 72.0, carbs: 74.0, fat: 80.0, serving: "1 burger" },
+    { name: "Chicken Wonton Tacos",                calories: 870,  protein: 39.0, carbs: 96.0, fat: 35.0, serving: "1 order" },
+    { name: "7oz House Sirloin",                   calories: 490,  protein: 55.0, carbs: 6.0,  fat: 27.0, serving: "1 steak" },
+    { name: "Crispy Asian Shrimp Salad",           calories: 990,  protein: 34.0, carbs: 90.0, fat: 55.0, serving: "1 salad" },
+    { name: "Bourbon Street Chicken & Shrimp",     calories: 460,  protein: 44.0, carbs: 16.0, fat: 23.0, serving: "1 plate" },
   ],
 
   "IHOP": [
@@ -470,6 +601,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Crispy Chicken Strips Dinner (4pc)", calories: 980,  protein: 52.0, carbs: 88.0, fat: 44.0, serving: "1 plate" },
     { name: "House Salad (No Dressing)",          calories: 190,  protein: 10.0, carbs: 18.0, fat: 9.0,  serving: "1 salad" },
     { name: "Simple & Fit Veggie Omelette",       calories: 330,  protein: 23.0, carbs: 8.0,  fat: 22.0, serving: "1 omelette" },
+    { name: "Cinn-A-Stack Pancakes (2pc)",         calories: 620,  protein: 9.0,  carbs: 96.0, fat: 23.0, serving: "2 pancakes" },
+    { name: "New York Cheesecake Pancakes (2pc)",  calories: 810,  protein: 11.0, carbs: 117.0, fat: 34.0, serving: "2 pancakes" },
+    { name: "Stuffed Caramel Banana French Toast", calories: 980,  protein: 22.0, carbs: 140.0, fat: 38.0, serving: "1 plate" },
+    { name: "Grilled Tilapia with Seasonal Veg",  calories: 480,  protein: 62.0, carbs: 12.0, fat: 20.0, serving: "1 plate" },
+    { name: "Smokehouse Combo",                    calories: 1320, protein: 63.0, carbs: 100.0, fat: 73.0, serving: "1 plate" },
   ],
 
   "Denny's": [
@@ -488,6 +624,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Double Berry Pancake Slam",          calories: 810,  protein: 26.0, carbs: 118.0, fat: 25.0, serving: "1 plate" },
     { name: "Pot Roast Dinner",                   calories: 440,  protein: 37.0, carbs: 32.0, fat: 18.0, serving: "1 plate" },
     { name: "Oreo Milkshake",                     calories: 580,  protein: 10.0, carbs: 88.0, fat: 21.0, serving: "1 shake" },
+    { name: "Build Your Own Slam",                 calories: 800,  protein: 40.0, carbs: 80.0, fat: 33.0, serving: "1 plate" },
+    { name: "Slamburger",                          calories: 980,  protein: 50.0, carbs: 72.0, fat: 55.0, serving: "1 burger" },
+    { name: "Super Bird (Turkey Club Sandwich)",   calories: 610,  protein: 37.0, carbs: 58.0, fat: 24.0, serving: "1 sandwich" },
+    { name: "Pumpkin Pie",                         calories: 400,  protein: 4.0,  carbs: 62.0, fat: 15.0, serving: "1 slice" },
+    { name: "Strawberry Pancakes (4pc)",           calories: 790,  protein: 15.0, carbs: 143.0, fat: 17.0, serving: "4 pancakes" },
   ],
 
   "Cracker Barrel": [
@@ -507,6 +648,10 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Grits (Side)",                       calories: 170,  protein: 4.0,  carbs: 34.0, fat: 2.0,  serving: "1 side" },
     { name: "Apple Pie",                          calories: 430,  protein: 4.0,  carbs: 67.0, fat: 17.0, serving: "1 slice" },
     { name: "Coca Cola Cake",                     calories: 460,  protein: 4.0,  carbs: 71.0, fat: 19.0, serving: "1 slice" },
+    { name: "Country Ham",                         calories: 380,  protein: 34.0, carbs: 2.0,  fat: 25.0, serving: "1 serving" },
+    { name: "Southern Fried Chicken (3pc)",        calories: 670,  protein: 57.0, carbs: 25.0, fat: 38.0, serving: "3 pieces" },
+    { name: "Macaroni & Cheese (Side)",            calories: 280,  protein: 11.0, carbs: 30.0, fat: 13.0, serving: "1 side" },
+    { name: "Sweet Potato Casserole (Side)",       calories: 230,  protein: 2.0,  carbs: 42.0, fat: 6.0,  serving: "1 side" },
   ],
 
   "Cook Out": [
@@ -525,6 +670,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Milkshake – Cheerwine (Regular)",    calories: 490,  protein: 9.0,  carbs: 79.0, fat: 16.0, serving: "1 regular" },
     { name: "Cheesecake (Slice)",                 calories: 420,  protein: 7.0,  carbs: 52.0, fat: 21.0, serving: "1 slice" },
     { name: "Quesadilla",                         calories: 430,  protein: 22.0, carbs: 38.0, fat: 21.0, serving: "1 quesadilla" },
+    { name: "Big Double Burger",                   calories: 590,  protein: 35.0, carbs: 28.0, fat: 36.0, serving: "1 burger" },
+    { name: "Spicy Chicken Sandwich",              calories: 510,  protein: 27.0, carbs: 49.0, fat: 23.0, serving: "1 sandwich" },
+    { name: "Biscuit (Sausage & Egg)",             calories: 530,  protein: 21.0, carbs: 37.0, fat: 34.0, serving: "1 biscuit" },
+    { name: "Cheerwine Float",                     calories: 410,  protein: 4.0,  carbs: 83.0, fat: 9.0,  serving: "1 float" },
+    { name: "Chicken Nuggets (10pc)",              calories: 380,  protein: 24.0, carbs: 24.0, fat: 21.0, serving: "10 pieces" },
   ],
 
   "Zaxby's": [
@@ -543,6 +693,11 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Texas Toast",                        calories: 180,  protein: 4.0,  carbs: 24.0, fat: 8.0,  serving: "1 slice" },
     { name: "Fried Mushrooms",                    calories: 380,  protein: 6.0,  carbs: 42.0, fat: 20.0, serving: "1 order" },
     { name: "Buffalo Wings (5pc)",                calories: 490,  protein: 37.0, carbs: 3.0,  fat: 36.0, serving: "5 wings" },
+    { name: "Wimpy's Grilled Sandwich",            calories: 510,  protein: 35.0, carbs: 48.0, fat: 17.0, serving: "1 sandwich" },
+    { name: "Nibbler Sandwich",                    calories: 330,  protein: 18.0, carbs: 34.0, fat: 12.0, serving: "1 sandwich" },
+    { name: "Tater Chips (Regular)",               calories: 290,  protein: 3.0,  carbs: 37.0, fat: 14.0, serving: "1 regular" },
+    { name: "Brownie",                             calories: 380,  protein: 4.0,  carbs: 57.0, fat: 16.0, serving: "1 brownie" },
+    { name: "Kiddie Fingers (2pc)",                calories: 200,  protein: 12.0, carbs: 16.0, fat: 9.0,  serving: "2 pieces" },
   ],
 
   "Freddy's Frozen Custard": [
@@ -562,6 +717,10 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Turtle Concrete (Medium)",           calories: 730,  protein: 12.0, carbs: 98.0, fat: 33.0, serving: "1 medium" },
     { name: "Custard Vanilla Milkshake (Medium)", calories: 640,  protein: 12.0, carbs: 82.0, fat: 28.0, serving: "1 medium" },
     { name: "Onion Rings (Regular)",              calories: 420,  protein: 5.0,  carbs: 52.0, fat: 22.0, serving: "1 regular" },
+    { name: "Jalapeno Bacon Double Steakburger",   calories: 700,  protein: 38.0, carbs: 37.0, fat: 41.0, serving: "1 burger" },
+    { name: "Mushroom Swiss Double Steakburger",   calories: 680,  protein: 38.0, carbs: 37.0, fat: 39.0, serving: "1 burger" },
+    { name: "Peanut Butter Concrete (Medium)",     calories: 870,  protein: 20.0, carbs: 101.0, fat: 45.0, serving: "1 medium" },
+    { name: "Vanilla Custard Milkshake (Medium)",  calories: 570,  protein: 12.0, carbs: 74.0, fat: 24.0, serving: "1 medium" },
   ],
 
   "In-N-Out Burger": [
@@ -581,6 +740,104 @@ export const CHAIN_MENUS: Record<string, ChainMenuItem[]> = {
     { name: "Chocolate Shake",                    calories: 690,  protein: 13.0, carbs: 99.0, fat: 29.0, serving: "1 shake" },
     { name: "Strawberry Shake",                   calories: 690,  protein: 13.0, carbs: 101.0, fat: 27.0, serving: "1 shake" },
     { name: "Lemonade",                           calories: 180,  protein: 0.0,  carbs: 46.0, fat: 0.0,  serving: "1 serving" },
+    { name: "Double Double Animal Style",          calories: 750,  protein: 39.0, carbs: 45.0, fat: 47.0, serving: "1 burger" },
+    { name: "Hamburger Protein Style",             calories: 240,  protein: 12.0, carbs: 11.0, fat: 17.0, serving: "1 burger" },
+    { name: "Root Beer Float",                     calories: 370,  protein: 3.0,  carbs: 72.0, fat: 8.0,  serving: "1 float" },
+    { name: "Hot Cocoa",                           calories: 140,  protein: 4.0,  carbs: 22.0, fat: 5.0,  serving: "1 serving" },
+  ],
+
+  // ── ADDITIONAL CHAINS ────────────────────────────────────────────────────────
+
+  "KFC": [
+    { name: "Original Recipe Breast",              calories: 400,  protein: 38.0, carbs: 11.0, fat: 22.0, serving: "1 piece" },
+    { name: "Extra Crispy Breast",                 calories: 510,  protein: 38.0, carbs: 23.0, fat: 31.0, serving: "1 piece" },
+    { name: "Original Recipe Thigh",               calories: 280,  protein: 18.0, carbs: 9.0,  fat: 18.0, serving: "1 piece" },
+    { name: "Extra Crispy Drumstick",              calories: 170,  protein: 13.0, carbs: 7.0,  fat: 10.0, serving: "1 piece" },
+    { name: "Classic Chicken Sandwich",            calories: 650,  protein: 34.0, carbs: 50.0, fat: 35.0, serving: "1 sandwich" },
+    { name: "Spicy Chicken Sandwich",              calories: 620,  protein: 31.0, carbs: 51.0, fat: 33.0, serving: "1 sandwich" },
+    { name: "Famous Bowl",                         calories: 710,  protein: 31.0, carbs: 86.0, fat: 27.0, serving: "1 bowl" },
+    { name: "Pot Pie",                             calories: 790,  protein: 32.0, carbs: 66.0, fat: 45.0, serving: "1 pot pie" },
+    { name: "Chicken Little Sandwich",             calories: 320,  protein: 14.0, carbs: 30.0, fat: 16.0, serving: "1 sandwich" },
+    { name: "8pc Popcorn Chicken",                 calories: 260,  protein: 14.0, carbs: 15.0, fat: 16.0, serving: "8 pieces" },
+    { name: "3pc Chicken Tenders",                 calories: 390,  protein: 31.0, carbs: 32.0, fat: 14.0, serving: "3 pieces" },
+    { name: "Mac & Cheese (Individual)",           calories: 220,  protein: 8.0,  carbs: 26.0, fat: 9.0,  serving: "1 serving" },
+    { name: "Mashed Potatoes & Gravy",             calories: 130,  protein: 3.0,  carbs: 20.0, fat: 4.0,  serving: "1 serving" },
+    { name: "Cole Slaw",                           calories: 150,  protein: 1.0,  carbs: 21.0, fat: 7.0,  serving: "1 serving" },
+    { name: "Biscuit",                             calories: 220,  protein: 4.0,  carbs: 26.0, fat: 10.0, serving: "1 biscuit" },
+    { name: "Corn on the Cob (3\")",               calories: 70,   protein: 2.0,  carbs: 13.0, fat: 2.0,  serving: "1 ear" },
+    { name: "Green Beans",                         calories: 30,   protein: 1.0,  carbs: 5.0,  fat: 0.0,  serving: "1 serving" },
+    { name: "BBQ Baked Beans",                     calories: 200,  protein: 7.0,  carbs: 38.0, fat: 2.0,  serving: "1 serving" },
+    { name: "Honey BBQ Chicken Sandwich",          calories: 350,  protein: 22.0, carbs: 42.0, fat: 10.0, serving: "1 sandwich" },
+    { name: "Large Fries",                         calories: 490,  protein: 7.0,  carbs: 65.0, fat: 22.0, serving: "1 large" },
+  ],
+
+  "Popeyes": [
+    { name: "2pc Mild Chicken (Leg & Thigh)",      calories: 590,  protein: 33.0, carbs: 22.0, fat: 40.0, serving: "2 pieces" },
+    { name: "2pc Spicy Chicken (Leg & Thigh)",     calories: 590,  protein: 33.0, carbs: 22.0, fat: 40.0, serving: "2 pieces" },
+    { name: "Classic Chicken Sandwich",            calories: 700,  protein: 28.0, carbs: 50.0, fat: 43.0, serving: "1 sandwich" },
+    { name: "Spicy Chicken Sandwich",              calories: 700,  protein: 28.0, carbs: 50.0, fat: 43.0, serving: "1 sandwich" },
+    { name: "3pc Chicken Tenders (Mild)",          calories: 340,  protein: 28.0, carbs: 21.0, fat: 15.0, serving: "3 pieces" },
+    { name: "3pc Chicken Tenders (Spicy)",         calories: 350,  protein: 28.0, carbs: 22.0, fat: 16.0, serving: "3 pieces" },
+    { name: "Spicy Chicken Po' Boy",               calories: 690,  protein: 28.0, carbs: 66.0, fat: 34.0, serving: "1 sandwich" },
+    { name: "Classic Chicken Wrap",                calories: 440,  protein: 24.0, carbs: 41.0, fat: 20.0, serving: "1 wrap" },
+    { name: "Red Beans & Rice (Regular)",          calories: 230,  protein: 8.0,  carbs: 31.0, fat: 9.0,  serving: "1 regular" },
+    { name: "Mashed Potatoes with Cajun Gravy",    calories: 120,  protein: 3.0,  carbs: 18.0, fat: 4.0,  serving: "1 serving" },
+    { name: "Biscuit",                             calories: 230,  protein: 4.0,  carbs: 27.0, fat: 12.0, serving: "1 biscuit" },
+    { name: "Cajun Fries (Regular)",               calories: 310,  protein: 4.0,  carbs: 41.0, fat: 14.0, serving: "1 regular" },
+    { name: "Mac & Cheese",                        calories: 230,  protein: 8.0,  carbs: 22.0, fat: 12.0, serving: "1 serving" },
+    { name: "Coleslaw",                            calories: 290,  protein: 2.0,  carbs: 25.0, fat: 20.0, serving: "1 serving" },
+    { name: "Corn on the Cob",                     calories: 190,  protein: 4.0,  carbs: 22.0, fat: 10.0, serving: "1 ear" },
+    { name: "Blackened Ranch Sauce",               calories: 190,  protein: 0.0,  carbs: 1.0,  fat: 21.0, serving: "1.5 oz" },
+    { name: "Chocolate Beignets (6pc)",            calories: 290,  protein: 3.0,  carbs: 44.0, fat: 12.0, serving: "6 pieces" },
+    { name: "Apple Pie (Individual)",              calories: 290,  protein: 2.0,  carbs: 40.0, fat: 13.0, serving: "1 pie" },
+    { name: "5pc Butterfly Shrimp Tackle Box",     calories: 640,  protein: 22.0, carbs: 73.0, fat: 27.0, serving: "1 box" },
+    { name: "8pc Wings",                           calories: 470,  protein: 36.0, carbs: 14.0, fat: 30.0, serving: "8 wings" },
+  ],
+
+  "Arby's": [
+    { name: "Classic Roast Beef",                  calories: 360,  protein: 23.0, carbs: 37.0, fat: 14.0, serving: "1 sandwich" },
+    { name: "Beef & Cheddar Classic",              calories: 450,  protein: 26.0, carbs: 44.0, fat: 19.0, serving: "1 sandwich" },
+    { name: "Double Beef & Cheddar",               calories: 630,  protein: 39.0, carbs: 44.0, fat: 34.0, serving: "1 sandwich" },
+    { name: "Smokehouse Brisket Sandwich",         calories: 610,  protein: 30.0, carbs: 57.0, fat: 28.0, serving: "1 sandwich" },
+    { name: "Crispy Chicken Sandwich",             calories: 540,  protein: 28.0, carbs: 51.0, fat: 24.0, serving: "1 sandwich" },
+    { name: "Spicy Three Pepper Chicken",          calories: 510,  protein: 28.0, carbs: 48.0, fat: 21.0, serving: "1 sandwich" },
+    { name: "Wagyu Steakhouse Burger",             calories: 790,  protein: 42.0, carbs: 54.0, fat: 44.0, serving: "1 burger" },
+    { name: "Medium Curly Fries",                  calories: 550,  protein: 8.0,  carbs: 70.0, fat: 25.0, serving: "1 medium" },
+    { name: "Medium Crinkle Fries",                calories: 360,  protein: 5.0,  carbs: 49.0, fat: 16.0, serving: "1 medium" },
+    { name: "Jalapeño Bites (5pc)",                calories: 330,  protein: 8.0,  carbs: 31.0, fat: 20.0, serving: "5 pieces" },
+    { name: "Mozzarella Sticks (4pc)",             calories: 430,  protein: 17.0, carbs: 35.0, fat: 25.0, serving: "4 pieces" },
+    { name: "3pc Chicken Tenders",                 calories: 340,  protein: 28.0, carbs: 29.0, fat: 12.0, serving: "3 pieces" },
+    { name: "Turkey Ranch & Bacon Sandwich",       calories: 580,  protein: 45.0, carbs: 42.0, fat: 26.0, serving: "1 sandwich" },
+    { name: "Roast Turkey Club",                   calories: 680,  protein: 47.0, carbs: 58.0, fat: 24.0, serving: "1 sandwich" },
+    { name: "Greek Gyro",                          calories: 710,  protein: 22.0, carbs: 79.0, fat: 34.0, serving: "1 gyro" },
+    { name: "Farmhouse Salad (Crispy Chicken)",    calories: 470,  protein: 34.0, carbs: 22.0, fat: 27.0, serving: "1 salad" },
+    { name: "Medium Jamocha Shake",                calories: 620,  protein: 12.0, carbs: 97.0, fat: 20.0, serving: "1 medium" },
+    { name: "Cherry Turnover",                     calories: 330,  protein: 3.0,  carbs: 47.0, fat: 14.0, serving: "1 turnover" },
+    { name: "Apple Pecan Chicken Salad",           calories: 520,  protein: 36.0, carbs: 40.0, fat: 23.0, serving: "1 salad" },
+    { name: "Medium Vanilla Shake",                calories: 570,  protein: 11.0, carbs: 88.0, fat: 19.0, serving: "1 medium" },
+  ],
+
+  "Jack in the Box": [
+    { name: "Jumbo Jack",                          calories: 620,  protein: 27.0, carbs: 52.0, fat: 33.0, serving: "1 burger" },
+    { name: "Jumbo Jack with Cheese",              calories: 710,  protein: 32.0, carbs: 54.0, fat: 39.0, serving: "1 burger" },
+    { name: "Ultimate Cheeseburger",               calories: 1010, protein: 48.0, carbs: 52.0, fat: 68.0, serving: "1 burger" },
+    { name: "Buttery Jack",                        calories: 750,  protein: 38.0, carbs: 55.0, fat: 43.0, serving: "1 burger" },
+    { name: "Sourdough Jack",                      calories: 710,  protein: 37.0, carbs: 56.0, fat: 39.0, serving: "1 burger" },
+    { name: "Cluck Sandwich (Spicy)",              calories: 590,  protein: 31.0, carbs: 55.0, fat: 27.0, serving: "1 sandwich" },
+    { name: "Chicken Sandwich",                    calories: 560,  protein: 27.0, carbs: 52.0, fat: 27.0, serving: "1 sandwich" },
+    { name: "Spicy Chicken Strips Burger",         calories: 580,  protein: 26.0, carbs: 55.0, fat: 28.0, serving: "1 burger" },
+    { name: "Breakfast Jack (Egg & Cheese)",       calories: 360,  protein: 17.0, carbs: 31.0, fat: 18.0, serving: "1 sandwich" },
+    { name: "Sausage Croissant",                   calories: 570,  protein: 20.0, carbs: 38.0, fat: 38.0, serving: "1 sandwich" },
+    { name: "Egg & Cheese Biscuit",                calories: 390,  protein: 14.0, carbs: 40.0, fat: 19.0, serving: "1 sandwich" },
+    { name: "Jumbo Breakfast Platter",             calories: 1130, protein: 35.0, carbs: 96.0, fat: 66.0, serving: "1 platter" },
+    { name: "Medium Natural-Cut Fries",            calories: 420,  protein: 5.0,  carbs: 56.0, fat: 20.0, serving: "1 medium" },
+    { name: "Medium Onion Rings",                  calories: 490,  protein: 5.0,  carbs: 55.0, fat: 27.0, serving: "1 medium" },
+    { name: "Tacos (2pc)",                         calories: 380,  protein: 14.0, carbs: 38.0, fat: 18.0, serving: "2 tacos" },
+    { name: "Stuffed Jalapeños (3pc)",             calories: 230,  protein: 7.0,  carbs: 23.0, fat: 13.0, serving: "3 pieces" },
+    { name: "Mini Churros (5pc)",                  calories: 380,  protein: 4.0,  carbs: 56.0, fat: 16.0, serving: "5 pieces" },
+    { name: "Medium Chocolate Shake",              calories: 880,  protein: 16.0, carbs: 148.0, fat: 26.0, serving: "1 medium" },
+    { name: "Oreo Cookie Shake (Medium)",          calories: 1050, protein: 20.0, carbs: 164.0, fat: 37.0, serving: "1 medium" },
+    { name: "Grilled Chicken Salad",               calories: 250,  protein: 29.0, carbs: 14.0, fat: 10.0, serving: "1 salad" },
   ],
 };
 

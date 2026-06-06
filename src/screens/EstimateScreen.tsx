@@ -7,7 +7,7 @@ import {
 import { Swipeable } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { useMealContext, MacroItem } from '../context/MealContext';
+import { useMealContext, MacroItem, LoggedMeal } from '../context/MealContext';
 import { MenuItem } from '../services/menuService';
 import { AnalysisResult } from '../services/visionService';
 
@@ -127,10 +127,29 @@ function buildInitialItems(
   }));
 }
 
+// ─── History autocomplete ────────────────────────────────────────────────────
+
+type HistorySuggestion = { count: number; item: MacroItem; name: string };
+
+function getHistorySuggestions(mealLog: LoggedMeal[], query: string): HistorySuggestion[] {
+  const freq: Record<string, HistorySuggestion> = {};
+  mealLog.forEach(meal => {
+    (meal.items || []).forEach(item => {
+      const key = item.name.toLowerCase();
+      if (!freq[key]) freq[key] = { count: 0, item, name: item.name };
+      freq[key].count++;
+    });
+  });
+  return Object.values(freq)
+    .filter(s => s.name.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function EstimateScreen({ navigation, route }: Props) {
-  const { addMeal, menuItems, venue } = useMealContext();
+  const { addMeal, menuItems, venue, mealLog } = useMealContext();
   const { analysisResult, imageBase64, source } = route.params;
 
   const [items, setItems] = useState<NormalizedItem[]>(() =>
@@ -154,7 +173,25 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [hasReanalyzed, setHasReanalyzed] = useState(false);
 
+  const [suggestions, setSuggestions] = useState<HistorySuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const isDiningHallMode = venue !== null;
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!searchQuery.trim() || isDiningHallMode) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    debounceRef.current = setTimeout(() => {
+      setSuggestions(getHistorySuggestions(mealLog, searchQuery.trim()));
+      setShowSuggestions(true);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchQuery, isDiningHallMode, mealLog]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -237,6 +274,24 @@ export default function EstimateScreen({ navigation, route }: Props) {
     setPortions(prev => ({ ...prev, [newItem.id]: 'medium' }));
     setAddModalVisible(false);
     setSearchQuery('');
+  }
+
+  function handleSuggestionTap(suggestion: HistorySuggestion) {
+    const newItem: NormalizedItem = {
+      id: `history-${Date.now()}`,
+      name: suggestion.name,
+      cal: suggestion.item.cal,
+      protein: suggestion.item.protein,
+      carbs: suggestion.item.carbs,
+      fat: suggestion.item.fat,
+      manuallyAdded: true,
+    };
+    setItems(prev => [...prev, newItem]);
+    setPortions(prev => ({ ...prev, [newItem.id]: 'medium' }));
+    setAddModalVisible(false);
+    setSearchQuery('');
+    setSuggestions([]);
+    setShowSuggestions(false);
   }
 
   async function handleReanalyze() {
@@ -450,6 +505,8 @@ export default function EstimateScreen({ navigation, route }: Props) {
         <TouchableOpacity style={styles.addItemBtn} onPress={() => {
           setSearchQuery('');
           setLookupError(null);
+          setSuggestions([]);
+          setShowSuggestions(false);
           setAddModalVisible(true);
         }}>
           <Text style={styles.addItemBtnText}>+ Add item</Text>
@@ -489,7 +546,11 @@ export default function EstimateScreen({ navigation, route }: Props) {
         >
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Add Item</Text>
-            <TouchableOpacity onPress={() => setAddModalVisible(false)}>
+            <TouchableOpacity onPress={() => {
+              setAddModalVisible(false);
+              setSuggestions([]);
+              setShowSuggestions(false);
+            }}>
               <Text style={styles.modalClose}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -521,6 +582,42 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
           {lookupError !== null && (
             <Text style={styles.lookupError}>{lookupError}</Text>
+          )}
+
+          {!isDiningHallMode && showSuggestions && (
+            <View style={styles.autocompleteDropdown}>
+              {suggestions.map((s, i) => (
+                <TouchableOpacity
+                  key={s.name}
+                  style={[styles.autocompleteRow, i < suggestions.length - 1 && styles.autocompleteRowBorder]}
+                  onPress={() => handleSuggestionTap(s)}
+                >
+                  <View style={styles.autocompleteLeft}>
+                    <Text style={styles.autocompleteName}>{s.name}</Text>
+                    <Text style={styles.autocompleteCount}>{s.count}× logged · {s.item.cal} cal</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {suggestions.length < 3 && (
+                <TouchableOpacity
+                  style={[
+                    styles.autocompleteRow,
+                    suggestions.length > 0 && styles.autocompleteRowBorder,
+                    styles.autocompleteDbRow,
+                  ]}
+                  onPress={() => {
+                    const q = searchQuery.trim();
+                    setAddModalVisible(false);
+                    setSearchQuery('');
+                    setSuggestions([]);
+                    setShowSuggestions(false);
+                    navigation.navigate('Search', { query: q, context: 'estimate' });
+                  }}
+                >
+                  <Text style={styles.autocompleteDbText}>Search food database →</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
 
           {isDiningHallMode && (
@@ -701,4 +798,31 @@ const styles = StyleSheet.create({
   },
   menuItemName: { fontSize: 15, color: '#FFFFFF', flex: 1 },
   menuItemCal: { fontSize: 13, color: '#8A8A8A' },
+
+  // Autocomplete dropdown
+  autocompleteDropdown: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+    overflow: 'hidden',
+  },
+  autocompleteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  autocompleteRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#2A2A2A',
+  },
+  autocompleteLeft: { flex: 1 },
+  autocompleteName: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  autocompleteCount: { fontSize: 12, color: '#8A8A8A', marginTop: 2 },
+  autocompleteDbRow: { justifyContent: 'center' },
+  autocompleteDbText: { fontSize: 14, color: '#00E5A0', fontWeight: '600' },
 });

@@ -30,10 +30,10 @@ const MULTIPLIERS: Multiplier[] = [
 
 function round1(n: number) { return Math.round(n * 10) / 10; }
 
-export default function SearchScreen({ navigation }: Props) {
+export default function SearchScreen({ navigation, route }: Props) {
   const { addMeal } = useMealContext();
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(route?.params?.query ?? '');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);

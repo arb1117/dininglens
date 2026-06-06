@@ -17,7 +17,7 @@ export type RootStackParamList = {
   Camera: undefined;
   Estimate: { analysisResult?: AnalysisResult; imageBase64?: string; source?: string };
   History: undefined;
-  Search: undefined;
+  Search: { query?: string; context?: string } | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

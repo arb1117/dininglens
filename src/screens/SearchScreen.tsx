@@ -203,7 +203,7 @@ export default function SearchScreen({ navigation, route }: Props) {
       totals:    { cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
     });
     setToastName(item.name);
-    setTimeout(() => { setToastName(null); navigation.navigate('Camera'); }, 1200);
+    setTimeout(() => { setToastName(null); navigation.navigate('MainTabs'); }, 1200);
   }
 
   function handleAddToMeal() {

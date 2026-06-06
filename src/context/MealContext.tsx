@@ -54,6 +54,14 @@ export type LoggedMeal = {
   totals: { cal: number; protein: number; carbs: number; fat: number };
 };
 
+export type ExerciseEntry = {
+  id: string;
+  name: string;
+  duration: number;
+  type: 'cardio' | 'strength' | 'other';
+  caloriesBurned: number;
+};
+
 function round1(n: number) { return Math.round(n * 10) / 10; }
 
 type MealContextType = {
@@ -68,6 +76,11 @@ type MealContextType = {
   setPeriodLabel: (label: string) => void;
   venue: Venue | null;
   setVenue: (venue: Venue | null) => void;
+  waterCups: number;
+  toggleWater: (index: number) => void;
+  exerciseLog: ExerciseEntry[];
+  addExercise: (entry: Omit<ExerciseEntry, 'id'>) => void;
+  totalBurned: number;
 };
 
 const MealContext = createContext<MealContextType>({
@@ -82,6 +95,11 @@ const MealContext = createContext<MealContextType>({
   setPeriodLabel: () => {},
   venue: null,
   setVenue: () => {},
+  waterCups: 0,
+  toggleWater: () => {},
+  exerciseLog: [],
+  addExercise: () => {},
+  totalBurned: 0,
 });
 
 export function MealProvider({ children }: { children: ReactNode }) {
@@ -90,6 +108,11 @@ export function MealProvider({ children }: { children: ReactNode }) {
   const [menuItems, setMenuItems] = useState<MenuItem[]>(FAKE_MENU);
   const [periodLabel, setPeriodLabel] = useState('Dinner');
   const [venue, setVenue] = useState<Venue | null>(null);
+  const today = new Date().toDateString();
+  const waterKey = `@dininglens_water_${today}`;
+  const exerciseKey = `@dininglens_exercise_${today}`;
+  const [waterCups, setWaterCups] = useState(0);
+  const [exerciseLog, setExerciseLog] = useState<ExerciseEntry[]>([]);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(raw => {
@@ -103,6 +126,18 @@ export function MealProvider({ children }: { children: ReactNode }) {
       }
     });
   }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem(waterKey)
+      .then(v => setWaterCups(v ? parseInt(v) : 0))
+      .catch(() => {});
+    AsyncStorage.getItem(exerciseKey)
+      .then(raw => {
+        if (raw) try { setExerciseLog(JSON.parse(raw)); } catch {}
+        else setExerciseLog([]);
+      })
+      .catch(() => {});
+  }, [waterKey, exerciseKey]);
 
   function setGoals(g: UserGoals) {
     setGoalsState(g);
@@ -138,9 +173,45 @@ export function MealProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  function toggleWater(index: number) {
+    setWaterCups(prev => {
+      const next = index < prev ? index : index + 1;
+      AsyncStorage.setItem(waterKey, String(next)).catch(() => {});
+      return next;
+    });
+  }
+
+  function addExercise(entry: Omit<ExerciseEntry, 'id'>) {
+    const full: ExerciseEntry = { ...entry, id: String(Date.now()) };
+    setExerciseLog(prev => {
+      const next = [...prev, full];
+      AsyncStorage.setItem(exerciseKey, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }
+
+  const totalBurned = exerciseLog.reduce((a, e) => a + e.caloriesBurned, 0);
+
   return (
     <MealContext.Provider
-      value={{ mealLog, addMeal, updateMealItem, goals, setGoals, menuItems, setMenuItems, periodLabel, setPeriodLabel, venue, setVenue }}
+      value={{
+        mealLog,
+        addMeal,
+        updateMealItem,
+        goals,
+        setGoals,
+        menuItems,
+        setMenuItems,
+        periodLabel,
+        setPeriodLabel,
+        venue,
+        setVenue,
+        waterCups,
+        toggleWater,
+        exerciseLog,
+        addExercise,
+        totalBurned,
+      }}
     >
       {children}
     </MealContext.Provider>

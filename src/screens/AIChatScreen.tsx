@@ -63,7 +63,7 @@ const bub = StyleSheet.create({
 
 export default function AIChatScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const { mealLog, goals } = useMealContext();
+  const { mealLog, goals, waterCups, exerciseLog, totalBurned } = useMealContext();
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -89,8 +89,14 @@ export default function AIChatScreen() {
     if (!loggedDates.has(d.toDateString())) d.setDate(d.getDate() - 1);
     let streak = 0;
     while (loggedDates.has(d.toDateString())) { streak++; d.setDate(d.getDate() - 1); }
-    return { todayLog: { meals: todayMeals.length, totals }, goals, streak };
-  }, [mealLog, goals, today]);
+    return {
+      todayLog: { meals: todayMeals.length, totals },
+      goals,
+      streak,
+      water: { cups: waterCups, ounces: waterCups * 8 },
+      exercise: { entries: exerciseLog.length, totalBurned },
+    };
+  }, [mealLog, goals, today, waterCups, exerciseLog.length, totalBurned]);
 
   const send = useCallback(async () => {
     const text = input.trim();

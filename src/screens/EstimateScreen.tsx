@@ -23,10 +23,10 @@ const VISUAL_PORTIONS: VisualPortion[] = ['tiny', 'small', 'medium', 'large', 'h
 
 const VISUAL_MULTIPLIERS: Record<VisualPortion, number> = {
   tiny:   0.4,
-  small:  0.7,
+  small:  0.6,
   medium: 1.0,
-  large:  1.5,
-  huge:   2.2,
+  large:  1.4,
+  huge:   2.0,
 };
 
 const VISUAL_LABELS: Record<VisualPortion, { emoji: string; label: string }> = {
@@ -77,7 +77,8 @@ function buildInitialItems(
 ): NormalizedItem[] {
   if (
     analysisResult?.reason === 'image_quality' ||
-    analysisResult?.reason === 'low_confidence'
+    analysisResult?.reason === 'low_confidence' ||
+    analysisResult?.reason === 'no_food'
   ) {
     return [];
   }
@@ -363,6 +364,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
   );
 
   function handleLogMeal() {
+    if (items.length === 0) return;
     const mealItems: MacroItem[] = items.map(item => {
       const portion = getPortionFor(item.id);
       const scaled = getScaled(item, portion);
@@ -375,8 +377,10 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const imageQualityError = !hasReanalyzed && (
     analysisResult?.reason === 'image_quality' || analysisResult?.reason === 'low_confidence'
   );
+  const noFoodError = !hasReanalyzed && analysisResult?.reason === 'no_food';
   const isFallback = !hasReanalyzed && !imageQualityError &&
-    (!analysisResult || analysisResult.detectedItems.length === 0);
+    !noFoodError && (!analysisResult || analysisResult.detectedItems.length === 0);
+  const sectionTitle = noFoodError ? 'No Food Detected' : isFallback ? 'Menu Items' : 'What you ate';
 
   return (
     <>
@@ -402,7 +406,18 @@ export default function EstimateScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        {venue && !isFallback && (
+        {noFoodError && (
+          <View style={styles.imageQualityBanner}>
+            <Text style={styles.imageQualityText}>
+              No food detected - add an item below or retake the photo
+            </Text>
+            <TouchableOpacity style={styles.retakeBtn} onPress={() => navigation.pop()}>
+              <Text style={styles.retakeBtnText}>Retake</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {venue && !isFallback && !imageQualityError && !noFoodError && (
           <View style={styles.venueCard}>
             <Text style={styles.venueCardText}>
               {'✓ Matched to '}
@@ -418,13 +433,13 @@ export default function EstimateScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        <Text style={styles.sectionLabel}>
-          {isFallback ? 'Menu Items' : 'What you ate'}
-        </Text>
+        <Text style={styles.sectionLabel}>{sectionTitle}</Text>
 
         {items.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>No items yet — add something below</Text>
+            <Text style={styles.emptyText}>
+              {noFoodError ? 'No meal items found in this photo.' : 'No items yet - add something below'}
+            </Text>
           </View>
         ) : (
           items.map(item => {
@@ -547,7 +562,11 @@ export default function EstimateScreen({ navigation, route }: Props) {
           )}
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={handleLogMeal}>
+        <TouchableOpacity
+          style={[styles.button, items.length === 0 && styles.buttonDisabled]}
+          onPress={handleLogMeal}
+          disabled={items.length === 0}
+        >
           <Text style={styles.buttonText}>Log Meal</Text>
         </TouchableOpacity>
 
@@ -784,6 +803,7 @@ const styles = StyleSheet.create({
   trafficItem: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
 
   button: { backgroundColor: '#00E5A0', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  buttonDisabled: { opacity: 0.35 },
   buttonText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
 
   // Modal

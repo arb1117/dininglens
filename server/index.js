@@ -157,7 +157,12 @@ app.post('/analyze', async (req, res) => {
 
   if (menuItems && menuItems.length > 0) {
     const menuList = menuItems
-      .map(i => `- ${i.name}: ${i.calories} cal, ${i.protein}g protein, ${i.carbs}g carbs, ${i.fat}g fat`)
+      .map(i => {
+        const hasNutrition = [i.calories, i.protein, i.carbs, i.fat].some(v => Number(v) > 0);
+        return hasNutrition
+          ? `- ${i.name}: ${i.calories} cal, ${i.protein}g protein, ${i.carbs}g carbs, ${i.fat}g fat`
+          : `- ${i.name}`;
+      })
       .join('\n');
     prompt = `${FOOD_PREAMBLE}
 
@@ -261,7 +266,12 @@ app.post('/reanalyze', async (req, res) => {
   let prompt;
   if (menuItems && menuItems.length > 0) {
     const menuList = menuItems
-      .map(i => `- ${i.name}: ${i.calories} cal, ${i.protein}g protein, ${i.carbs}g carbs, ${i.fat}g fat`)
+      .map(i => {
+        const hasNutrition = [i.calories, i.protein, i.carbs, i.fat].some(v => Number(v) > 0);
+        return hasNutrition
+          ? `- ${i.name}: ${i.calories} cal, ${i.protein}g protein, ${i.carbs}g carbs, ${i.fat}g fat`
+          : `- ${i.name}`;
+      })
       .join('\n');
     prompt = `${FOOD_PREAMBLE}
 
@@ -664,7 +674,7 @@ app.post('/chat', async (req, res) => {
   const { message, context, history } = req.body;
   if (!message) return res.status(400).json({ error: 'message required' });
 
-  const contextBlock = context ? `\n\nUser context:\n- Today: ${context.todayLog?.meals ?? 0} meals logged, ${Math.round(context.todayLog?.totals?.cal ?? 0)} cal eaten\n- Goals: ${context.goals?.calories ?? '?'} cal, ${context.goals?.protein ?? '?'}g protein\n- Streak: ${context.streak ?? 0} days` : '';
+  const contextBlock = context ? `\n\nUser context:\n- Today: ${context.todayLog?.meals ?? 0} meals logged, ${Math.round(context.todayLog?.totals?.cal ?? 0)} cal eaten\n- Goals: ${context.goals?.calories ?? '?'} cal, ${context.goals?.protein ?? '?'}g protein\n- Water: ${context.water?.ounces ?? 0} oz (${context.water?.cups ?? 0} cups)\n- Exercise: ${context.exercise?.totalBurned ?? 0} cal burned across ${context.exercise?.entries ?? 0} entries\n- Streak: ${context.streak ?? 0} days` : '';
 
   const messages = [
     ...(Array.isArray(history) ? history.slice(-8).map(h => ({ role: h.role, content: h.content })) : []),

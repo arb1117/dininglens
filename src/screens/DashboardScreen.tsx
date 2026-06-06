@@ -4,11 +4,10 @@ import {
   SafeAreaView, Modal, TextInput, ActivityIndicator,
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext, periodFromTimestamp } from '../context/MealContext';
-import type { MealPeriod } from '../context/MealContext';
+import type { ExerciseEntry, MacroItem, MealPeriod } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
@@ -19,14 +18,6 @@ const PERIOD_LABELS: Record<MealPeriod, string> = {
   lunch: 'Lunch',
   dinner: 'Dinner',
   snacks: 'Snacks',
-};
-
-type ExerciseEntry = {
-  id: string;
-  name: string;
-  duration: number;
-  type: 'cardio' | 'strength' | 'other';
-  caloriesBurned: number;
 };
 
 function getGreeting(): string {
@@ -44,10 +35,11 @@ function CalorieRing({ consumed, goal, burned }: { consumed: number; goal: numbe
   const STROKE = 14;
   const circumference = 2 * Math.PI * R;
   const net = consumed - burned;
+  const ratio = net / goal;
   const progress = Math.min(Math.max(net, 0) / goal, 1);
   const remaining = Math.max(goal - net, 0);
   const over = net > goal;
-  const ringColor = over ? '#FF4444' : net / goal > 0.9 ? '#FF9500' : '#00E5A0';
+  const ringColor = ratio > 1.1 ? '#FF4444' : ratio >= 0.9 ? '#FF9500' : '#00E5A0';
 
   return (
     <View style={ring.wrapper}>
@@ -279,7 +271,15 @@ const em = StyleSheet.create({
 
 export default function DashboardScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const { mealLog, goals } = useMealContext();
+  const {
+    mealLog,
+    goals,
+    waterCups,
+    toggleWater,
+    exerciseLog,
+    addExercise,
+    totalBurned,
+  } = useMealContext();
 
   const today = new Date().toDateString();
 
@@ -312,53 +312,21 @@ export default function DashboardScreen() {
 
   // Group today's meals by period
   const mealsByPeriod = useMemo(() => {
-    const groups: Record<MealPeriod, { mealId: string; name: string; cal: number; portion: string }[]> = {
+    const groups: Record<MealPeriod, { mealId: string; itemIndex: number; item: MacroItem; name: string; cal: number; portion: string }[]> = {
       breakfast: [], lunch: [], dinner: [], snacks: [],
     };
     for (const meal of todayMeals) {
       const period = meal.period ?? periodFromTimestamp(meal.timestamp);
-      for (const item of meal.items) {
-        groups[period as MealPeriod]?.push({ mealId: meal.id, name: item.name, cal: item.cal, portion: item.portion });
-      }
+      meal.items.forEach((item, itemIndex) => {
+        groups[period as MealPeriod]?.push({ mealId: meal.id, itemIndex, item, name: item.name, cal: item.cal, portion: item.portion });
+      });
     }
     return groups;
   }, [todayMeals]);
 
-  // Water state
-  const waterKey = `@dininglens_water_${today}`;
-  const [waterCups, setWaterCups] = useState(0);
-  useEffect(() => {
-    AsyncStorage.getItem(waterKey).then(v => setWaterCups(v ? parseInt(v) : 0)).catch(() => {});
-  }, [waterKey]);
-
-  function toggleWater(index: number) {
-    const next = index < waterCups ? index : index + 1;
-    setWaterCups(next);
-    AsyncStorage.setItem(waterKey, String(next)).catch(() => {});
-  }
-
   // Exercise state
-  const exerciseKey = `@dininglens_exercise_${today}`;
-  const [exerciseLog, setExerciseLog] = useState<ExerciseEntry[]>([]);
   const [exerciseExpanded, setExerciseExpanded] = useState(false);
   const [showExerciseModal, setShowExerciseModal] = useState(false);
-
-  useEffect(() => {
-    AsyncStorage.getItem(exerciseKey).then(raw => {
-      if (raw) try { setExerciseLog(JSON.parse(raw)); } catch {}
-    }).catch(() => {});
-  }, [exerciseKey]);
-
-  function addExercise(entry: Omit<ExerciseEntry, 'id'>) {
-    const full: ExerciseEntry = { ...entry, id: String(Date.now()) };
-    setExerciseLog(prev => {
-      const next = [...prev, full];
-      AsyncStorage.setItem(exerciseKey, JSON.stringify(next)).catch(() => {});
-      return next;
-    });
-  }
-
-  const totalBurned = exerciseLog.reduce((a, e) => a + e.caloriesBurned, 0);
 
   // Micros expanded
   const [microsExpanded, setMicrosExpanded] = useState(false);
@@ -406,7 +374,7 @@ export default function DashboardScreen() {
                     {periodCal > 0 && <Text style={s.periodCal}>{periodCal} cal</Text>}
                     <TouchableOpacity
                       style={s.addItemBtn}
-                      onPress={() => navigation.navigate('Search', { context: period })}
+                      onPress={() => navigation.navigate('Search', { period })}
                     >
                       <Text style={s.addItemBtnText}>+</Text>
                     </TouchableOpacity>
@@ -422,7 +390,9 @@ export default function DashboardScreen() {
                       onPress={() => navigation.navigate('Search', {
                         editMode: true,
                         mealId: item.mealId,
+                        itemIndex: item.itemIndex,
                         query: item.name,
+                        existingItem: item.item,
                       })}
                     >
                       <Text style={s.foodItemName} numberOfLines={1}>{item.name}</Text>

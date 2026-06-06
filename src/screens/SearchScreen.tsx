@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { useMealContext, MacroItem } from '../context/MealContext';
+import { useMealContext, MacroItem, MealPeriod } from '../context/MealContext';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
 
@@ -20,6 +20,13 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'common',  label: 'Common' },
   { key: 'branded', label: 'Branded' },
 ];
+
+const PERIOD_LABELS: Record<MealPeriod, string> = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  dinner: 'Dinner',
+  snacks: 'Snacks',
+};
 
 type ApiResult = {
   name: string;
@@ -59,6 +66,8 @@ export default function SearchScreen({ navigation, route }: Props) {
   const mealId       = params?.mealId;
   const itemIndex    = params?.itemIndex;
   const existingItem = params?.existingItem;
+  const selectedPeriod = params?.period as MealPeriod | undefined;
+  const selectedPeriodLabel = selectedPeriod ? PERIOD_LABELS[selectedPeriod] : null;
 
   const [query, setQuery] = useState(
     params?.query ?? (editMode && existingItem ? existingItem.name : '')
@@ -198,7 +207,8 @@ export default function SearchScreen({ navigation, route }: Props) {
     setSheet(null);
     addMeal({
       id:        String(Date.now()),
-      timestamp: new Date().toLocaleString(),
+      timestamp: new Date().toISOString(),
+      period:    selectedPeriod,
       items:     [item],
       totals:    { cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
     });
@@ -243,6 +253,11 @@ export default function SearchScreen({ navigation, route }: Props) {
           returnKeyType="search"
           clearButtonMode="while-editing"
         />
+        {selectedPeriodLabel && !editMode && (
+          <View style={s.periodPill}>
+            <Text style={s.periodPillText}>Adding to {selectedPeriodLabel}</Text>
+          </View>
+        )}
       </View>
 
       <ScrollView
@@ -350,7 +365,9 @@ export default function SearchScreen({ navigation, route }: Props) {
             ) : (
               <>
                 <TouchableOpacity style={s.logBtn} onPress={handleLogIt}>
-                  <Text style={s.logBtnText}>Log It</Text>
+                  <Text style={s.logBtnText}>
+                    {selectedPeriodLabel ? `Log to ${selectedPeriodLabel}` : 'Log It'}
+                  </Text>
                 </TouchableOpacity>
                 {isEstimate && (
                   <TouchableOpacity style={s.addBtn} onPress={handleAddToMeal}>
@@ -382,6 +399,17 @@ const s = StyleSheet.create({
     fontSize: 16, color: '#FFFFFF',
     borderWidth: 1, borderColor: '#2A2A2A',
   },
+  periodPill: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    backgroundColor: '#0A2A1A',
+    borderWidth: 1,
+    borderColor: '#1A4A2A',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  periodPillText: { color: '#00E5A0', fontSize: 12, fontWeight: '700' },
 
   filterRow: { flexGrow: 0, paddingBottom: 4 },
   filterContent: { paddingHorizontal: 16, gap: 8, flexDirection: 'row' },

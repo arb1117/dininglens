@@ -282,12 +282,21 @@ export default function EstimateScreen({ navigation, route }: Props) {
                 <View style={styles.itemCard}>
                   <Text style={styles.itemName}>{item.name}</Text>
                   {!item.manuallyAdded && item.confidence !== undefined && (
-                    <Text style={[
-                      styles.confidenceText,
-                      item.confidence < 0.6 && styles.confidenceLow,
-                    ]}>
-                      {Math.round(item.confidence * 100)}% confident
-                    </Text>
+                    <View style={styles.confidenceRow}>
+                      <View style={styles.confidenceBarTrack}>
+                        <View style={[
+                          styles.confidenceBarFill,
+                          { width: `${Math.round(item.confidence * 100)}%` as any },
+                          item.confidence < 0.6 && styles.confidenceBarLow,
+                        ]} />
+                      </View>
+                      <Text style={[
+                        styles.confidenceText,
+                        item.confidence < 0.6 && styles.confidenceLow,
+                      ]}>
+                        {Math.round(item.confidence * 100)}% confident
+                      </Text>
+                    </View>
                   )}
                   <View style={styles.portionRow}>
                     {PORTIONS.map(p => (
@@ -440,7 +449,13 @@ const styles = StyleSheet.create({
   },
   itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
 
-  confidenceText: { fontSize: 12, color: '#8A8A8A', marginBottom: 8 },
+  confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  confidenceBarTrack: {
+    width: 60, height: 4, backgroundColor: '#2A2A2A', borderRadius: 2, overflow: 'hidden',
+  },
+  confidenceBarFill: { height: 4, backgroundColor: '#00E5A0', borderRadius: 2 },
+  confidenceBarLow: { backgroundColor: '#FF9500' },
+  confidenceText: { fontSize: 12, color: '#8A8A8A' },
   confidenceLow: { color: '#FF9500' },
 
   portionRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },

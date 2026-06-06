@@ -22,19 +22,21 @@ function round1(n: number) {
 }
 
 export default function EstimateScreen({ navigation }: Props) {
-  const { addMeal, menuItems } = useMealContext();
+  const { addMeal, menuItems, venue } = useMealContext();
 
-  // Use first 3 items from the live menu as "detected" items
-  const detectedItems = useMemo(() =>
-    menuItems.slice(0, 3).map(item => ({
-      id: item.id,
-      name: item.name,
-      cal: item.calories,
-      protein: item.protein,
-      carbs: item.carbs,
-      fat: item.fat,
-    })),
-  [menuItems]);
+  // First 3 items from live menu as "detected" items
+  const detectedItems = useMemo(
+    () =>
+      menuItems.slice(0, 3).map(item => ({
+        id: item.id,
+        name: item.name,
+        cal: item.calories,
+        protein: item.protein,
+        carbs: item.carbs,
+        fat: item.fat,
+      })),
+    [menuItems]
+  );
 
   const [portions, setPortions] = useState<Record<string, Portion>>({});
 
@@ -45,21 +47,21 @@ export default function EstimateScreen({ navigation }: Props) {
   function getScaled(item: typeof detectedItems[0], portion: Portion) {
     const m = MULTIPLIERS[portion];
     return {
-      cal: round1(item.cal * m),
+      cal:     round1(item.cal     * m),
       protein: round1(item.protein * m),
-      carbs: round1(item.carbs * m),
-      fat: round1(item.fat * m),
+      carbs:   round1(item.carbs   * m),
+      fat:     round1(item.fat     * m),
     };
   }
 
   const totals = detectedItems.reduce(
     (acc, item) => {
-      const scaled = getScaled(item, getPortionFor(item.id));
+      const s = getScaled(item, getPortionFor(item.id));
       return {
-        cal: round1(acc.cal + scaled.cal),
-        protein: round1(acc.protein + scaled.protein),
-        carbs: round1(acc.carbs + scaled.carbs),
-        fat: round1(acc.fat + scaled.fat),
+        cal:     round1(acc.cal     + s.cal),
+        protein: round1(acc.protein + s.protein),
+        carbs:   round1(acc.carbs   + s.carbs),
+        fat:     round1(acc.fat     + s.fat),
       };
     },
     { cal: 0, protein: 0, carbs: 0, fat: 0 }
@@ -77,13 +79,30 @@ export default function EstimateScreen({ navigation }: Props) {
       items,
       totals,
     });
-    navigation.navigate('History');
+    navigation.navigate('Camera');
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.header}>Meal Estimate</Text>
+
+      {/* Venue context card */}
+      {venue && (
+        <View style={styles.venueCard}>
+          <Text style={styles.venueCardText}>
+            {'✓ Matched to '}
+            <Text style={styles.venueCardName}>{venue.name}</Text>
+            {' menu'}
+          </Text>
+          {/* View menu is a Phase 3 nav target; placeholder for now */}
+          <TouchableOpacity>
+            <Text style={styles.venueCardLink}>View menu</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <Text style={styles.sectionLabel}>Detected Items</Text>
+
       {detectedItems.map(item => {
         const portion = getPortionFor(item.id);
         const scaled = getScaled(item, portion);
@@ -112,15 +131,29 @@ export default function EstimateScreen({ navigation }: Props) {
           </View>
         );
       })}
+
       <View style={styles.totalsCard}>
         <Text style={styles.totalsTitle}>Meal Totals</Text>
         <View style={styles.totalsRow}>
-          <View style={styles.totalItem}><Text style={styles.totalValue}>{totals.cal}</Text><Text style={styles.totalLabel}>cal</Text></View>
-          <View style={styles.totalItem}><Text style={styles.totalValue}>{totals.protein}g</Text><Text style={styles.totalLabel}>protein</Text></View>
-          <View style={styles.totalItem}><Text style={styles.totalValue}>{totals.carbs}g</Text><Text style={styles.totalLabel}>carbs</Text></View>
-          <View style={styles.totalItem}><Text style={styles.totalValue}>{totals.fat}g</Text><Text style={styles.totalLabel}>fat</Text></View>
+          <View style={styles.totalItem}>
+            <Text style={styles.totalValue}>{totals.cal}</Text>
+            <Text style={styles.totalLabel}>cal</Text>
+          </View>
+          <View style={styles.totalItem}>
+            <Text style={styles.totalValue}>{totals.protein}g</Text>
+            <Text style={styles.totalLabel}>protein</Text>
+          </View>
+          <View style={styles.totalItem}>
+            <Text style={styles.totalValue}>{totals.carbs}g</Text>
+            <Text style={styles.totalLabel}>carbs</Text>
+          </View>
+          <View style={styles.totalItem}>
+            <Text style={styles.totalValue}>{totals.fat}g</Text>
+            <Text style={styles.totalLabel}>fat</Text>
+          </View>
         </View>
       </View>
+
       <TouchableOpacity style={styles.button} onPress={handleLogMeal}>
         <Text style={styles.buttonText}>Log Meal</Text>
       </TouchableOpacity>
@@ -131,8 +164,24 @@ export default function EstimateScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 20, paddingBottom: 40 },
-  header: { fontSize: 22, fontWeight: '800', color: '#500000', marginBottom: 16, marginTop: 8 },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+  header: { fontSize: 22, fontWeight: '800', color: '#500000', marginBottom: 12, marginTop: 8 },
+  venueCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#edf7ed',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+  },
+  venueCardText: { fontSize: 13, color: '#333' },
+  venueCardName: { fontWeight: '700', color: '#2e7d32' },
+  venueCardLink: { fontSize: 13, color: '#500000', fontWeight: '600', textDecorationLine: 'underline' },
+  sectionLabel: {
+    fontSize: 13, fontWeight: '600', color: '#888',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
+  },
   itemCard: { backgroundColor: '#f9f9f9', borderRadius: 12, padding: 16, marginBottom: 12 },
   itemName: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 10 },
   portionRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
@@ -141,9 +190,15 @@ const styles = StyleSheet.create({
   portionBtnText: { fontSize: 13, fontWeight: '600', color: '#555' },
   portionBtnTextActive: { color: '#fff' },
   macroRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  macroText: { fontSize: 12, color: '#666', backgroundColor: '#ececec', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  macroText: {
+    fontSize: 12, color: '#666', backgroundColor: '#ececec',
+    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
+  },
   totalsCard: { backgroundColor: '#500000', borderRadius: 14, padding: 20, marginTop: 8, marginBottom: 20 },
-  totalsTitle: { color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 },
+  totalsTitle: {
+    color: '#fff', fontSize: 14, fontWeight: '700',
+    marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1,
+  },
   totalsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   totalItem: { alignItems: 'center' },
   totalValue: { color: '#fff', fontSize: 20, fontWeight: '800' },

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useMealContext, LoggedMeal, MacroItem } from '../context/MealContext';
+import { useMealContext, LoggedMeal, MacroItem, autoDetectPeriod } from '../context/MealContext';
 import { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
@@ -9,10 +9,20 @@ type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
 type MealCardProps = {
   meal: LoggedMeal;
   onEditItem: (mealId: string, itemIndex: number, item: MacroItem) => void;
+  onDelete: (mealId: string) => void;
+  onLogAgain: (meal: LoggedMeal) => void;
+  onRemoveItem: (mealId: string, itemIndex: number) => void;
 };
 
-function MealCard({ meal, onEditItem }: MealCardProps) {
+function MealCard({ meal, onEditItem, onDelete, onLogAgain, onRemoveItem }: MealCardProps) {
   const [expanded, setExpanded] = useState(false);
+
+  function confirmDelete() {
+    Alert.alert('Delete this meal?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => onDelete(meal.id) },
+    ]);
+  }
 
   return (
     <TouchableOpacity
@@ -21,8 +31,26 @@ function MealCard({ meal, onEditItem }: MealCardProps) {
       activeOpacity={0.8}
     >
       <View style={styles.cardHeader}>
-        <Text style={styles.timestamp}>{meal.timestamp}</Text>
-        <Text style={styles.itemCount}>{meal.items.length} item{meal.items.length !== 1 ? 's' : ''}</Text>
+        <View style={styles.cardHeaderLeft}>
+          <Text style={styles.timestamp}>{meal.timestamp}</Text>
+          <Text style={styles.itemCount}>{meal.items.length} item{meal.items.length !== 1 ? 's' : ''}</Text>
+        </View>
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => onLogAgain(meal)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.actionBtnText}>↺</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.deleteActionBtn]}
+            onPress={confirmDelete}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.actionBtnText}>🗑</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {!expanded && meal.items.length > 0 && (
@@ -52,6 +80,13 @@ function MealCard({ meal, onEditItem }: MealCardProps) {
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Text style={styles.editBtnText}>✏️</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.removeItemBtn}
+                  onPress={() => onRemoveItem(meal.id, i)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.removeItemBtnText}>✕</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -85,7 +120,8 @@ function MealCard({ meal, onEditItem }: MealCardProps) {
 }
 
 export default function HistoryScreen({ navigation }: Props) {
-  const { mealLog } = useMealContext();
+  const { mealLog, addMeal, deleteMeal, deleteMealItem } = useMealContext();
+  const [toast, setToast] = useState<string | null>(null);
 
   function handleEditItem(mealId: string, itemIndex: number, item: MacroItem) {
     navigation.navigate('Search', {
@@ -96,8 +132,30 @@ export default function HistoryScreen({ navigation }: Props) {
     });
   }
 
+  function handleLogAgain(meal: LoggedMeal) {
+    addMeal({
+      id: String(Date.now()),
+      timestamp: new Date().toISOString(),
+      period: autoDetectPeriod(),
+      items: meal.items,
+      totals: meal.totals,
+    });
+    setToast('✓ Logged again');
+    setTimeout(() => setToast(null), 1800);
+  }
+
+  function handleRemoveItem(mealId: string, itemIndex: number) {
+    deleteMealItem(mealId, itemIndex);
+  }
+
   return (
     <View style={styles.container}>
+      {toast !== null && (
+        <View style={styles.toast}>
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      )}
+
       <Text style={styles.header}>Meal History</Text>
       {mealLog.length === 0 ? (
         <View style={styles.empty}>
@@ -108,7 +166,13 @@ export default function HistoryScreen({ navigation }: Props) {
           data={mealLog}
           keyExtractor={m => m.id}
           renderItem={({ item }) => (
-            <MealCard meal={item} onEditItem={handleEditItem} />
+            <MealCard
+              meal={item}
+              onEditItem={handleEditItem}
+              onDelete={deleteMeal}
+              onLogAgain={handleLogAgain}
+              onRemoveItem={handleRemoveItem}
+            />
           )}
           contentContainerStyle={styles.list}
         />
@@ -121,6 +185,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F0F0F', padding: 20 },
   header: { fontSize: 22, fontWeight: '800', color: '#FFFFFF', marginBottom: 16, marginTop: 8 },
 
+  toast: {
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+    backgroundColor: '#00E5A0', paddingVertical: 12, alignItems: 'center',
+  },
+  toastText: { color: '#0F0F0F', fontWeight: '700', fontSize: 15 },
+
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { fontSize: 16, color: '#8A8A8A' },
 
@@ -130,9 +200,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: '#2A2A2A',
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
+  cardHeaderLeft: { flex: 1 },
   timestamp: { fontSize: 12, color: '#8A8A8A', fontWeight: '600' },
-  itemCount: { fontSize: 11, color: '#8A8A8A' },
+  itemCount: { fontSize: 11, color: '#8A8A8A', marginTop: 2 },
+
+  cardActions: { flexDirection: 'row', gap: 6, marginLeft: 10 },
+  actionBtn: {
+    width: 32, height: 32, borderRadius: 8,
+    backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center',
+  },
+  deleteActionBtn: { backgroundColor: '#2A1010' },
+  actionBtnText: { fontSize: 15 },
+
   itemsSummary: { fontSize: 13, color: '#8A8A8A', marginBottom: 10 },
 
   itemsContainer: { marginBottom: 12 },
@@ -143,7 +223,7 @@ const styles = StyleSheet.create({
   itemLeft: { flex: 1, marginRight: 8 },
   itemName: { fontSize: 14, color: '#FFFFFF', fontWeight: '500' },
   itemPortion: { fontSize: 12, color: '#8A8A8A', marginTop: 2 },
-  itemRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  itemRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemMacros: { flexDirection: 'row', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' },
   itemMacroText: {
     fontSize: 11, color: '#8A8A8A', backgroundColor: '#2A2A2A',
@@ -151,6 +231,11 @@ const styles = StyleSheet.create({
   },
   editBtn: { padding: 4 },
   editBtnText: { fontSize: 14 },
+  removeItemBtn: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#2A1010', alignItems: 'center', justifyContent: 'center',
+  },
+  removeItemBtnText: { fontSize: 11, color: '#FF6B6B', fontWeight: '700' },
 
   divider: { height: 1, backgroundColor: '#2A2A2A', marginBottom: 12 },
 

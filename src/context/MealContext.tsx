@@ -68,6 +68,8 @@ type MealContextType = {
   mealLog: LoggedMeal[];
   addMeal: (meal: LoggedMeal) => void;
   updateMealItem: (mealId: string, itemIndex: number, updated: MacroItem) => void;
+  deleteMeal: (mealId: string) => void;
+  deleteMealItem: (mealId: string, itemIndex: number) => void;
   goals: UserGoals;
   setGoals: (goals: UserGoals) => void;
   menuItems: MenuItem[];
@@ -87,6 +89,8 @@ const MealContext = createContext<MealContextType>({
   mealLog: [],
   addMeal: () => {},
   updateMealItem: () => {},
+  deleteMeal: () => {},
+  deleteMealItem: () => {},
   goals: DEFAULT_GOALS,
   setGoals: () => {},
   menuItems: FAKE_MENU,
@@ -173,6 +177,35 @@ export function MealProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  function deleteMeal(mealId: string) {
+    setMealLog(prev => {
+      const next = prev.filter(m => m.id !== mealId);
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }
+
+  function deleteMealItem(mealId: string, itemIndex: number) {
+    setMealLog(prev => {
+      const next = prev.map(meal => {
+        if (meal.id !== mealId) return meal;
+        const newItems = meal.items.filter((_, i) => i !== itemIndex);
+        const totals = newItems.reduce(
+          (acc, item) => ({
+            cal: Math.round(acc.cal + item.cal),
+            protein: round1(acc.protein + item.protein),
+            carbs: round1(acc.carbs + item.carbs),
+            fat: round1(acc.fat + item.fat),
+          }),
+          { cal: 0, protein: 0, carbs: 0, fat: 0 }
+        );
+        return { ...meal, items: newItems, totals };
+      });
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }
+
   function toggleWater(index: number) {
     setWaterCups(prev => {
       const next = index < prev ? index : index + 1;
@@ -198,6 +231,8 @@ export function MealProvider({ children }: { children: ReactNode }) {
         mealLog,
         addMeal,
         updateMealItem,
+        deleteMeal,
+        deleteMealItem,
         goals,
         setGoals,
         menuItems,

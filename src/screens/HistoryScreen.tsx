@@ -1,8 +1,17 @@
 import React, { useState } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
-import { useMealContext, LoggedMeal } from '../context/MealContext';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useMealContext, LoggedMeal, MacroItem } from '../context/MealContext';
+import { RootStackParamList } from '../../App';
 
-function MealCard({ meal }: { meal: LoggedMeal }) {
+type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
+
+type MealCardProps = {
+  meal: LoggedMeal;
+  onEditItem: (mealId: string, itemIndex: number, item: MacroItem) => void;
+};
+
+function MealCard({ meal, onEditItem }: MealCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -30,11 +39,20 @@ function MealCard({ meal }: { meal: LoggedMeal }) {
                 <Text style={styles.itemName}>{item.name}</Text>
                 <Text style={styles.itemPortion}>{item.portion}</Text>
               </View>
-              <View style={styles.itemMacros}>
-                <Text style={styles.itemMacroText}>{item.cal} cal</Text>
-                <Text style={styles.itemMacroText}>{item.protein}g P</Text>
-                <Text style={styles.itemMacroText}>{item.carbs}g C</Text>
-                <Text style={styles.itemMacroText}>{item.fat}g F</Text>
+              <View style={styles.itemRight}>
+                <View style={styles.itemMacros}>
+                  <Text style={styles.itemMacroText}>{item.cal} cal</Text>
+                  <Text style={styles.itemMacroText}>{item.protein}g P</Text>
+                  <Text style={styles.itemMacroText}>{item.carbs}g C</Text>
+                  <Text style={styles.itemMacroText}>{item.fat}g F</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.editBtn}
+                  onPress={() => onEditItem(meal.id, i, item)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.editBtnText}>✏️</Text>
+                </TouchableOpacity>
               </View>
             </View>
           ))}
@@ -66,8 +84,17 @@ function MealCard({ meal }: { meal: LoggedMeal }) {
   );
 }
 
-export default function HistoryScreen() {
+export default function HistoryScreen({ navigation }: Props) {
   const { mealLog } = useMealContext();
+
+  function handleEditItem(mealId: string, itemIndex: number, item: MacroItem) {
+    navigation.navigate('Search', {
+      editMode: true,
+      mealId,
+      itemIndex,
+      existingItem: item,
+    });
+  }
 
   return (
     <View style={styles.container}>
@@ -80,7 +107,9 @@ export default function HistoryScreen() {
         <FlatList
           data={mealLog}
           keyExtractor={m => m.id}
-          renderItem={({ item }) => <MealCard meal={item} />}
+          renderItem={({ item }) => (
+            <MealCard meal={item} onEditItem={handleEditItem} />
+          )}
           contentContainerStyle={styles.list}
         />
       )}
@@ -111,14 +140,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'flex-start', marginBottom: 10,
   },
-  itemLeft: { flex: 1, marginRight: 12 },
+  itemLeft: { flex: 1, marginRight: 8 },
   itemName: { fontSize: 14, color: '#FFFFFF', fontWeight: '500' },
   itemPortion: { fontSize: 12, color: '#8A8A8A', marginTop: 2 },
-  itemMacros: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  itemRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  itemMacros: { flexDirection: 'row', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' },
   itemMacroText: {
     fontSize: 11, color: '#8A8A8A', backgroundColor: '#2A2A2A',
     borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2,
   },
+  editBtn: { padding: 4 },
+  editBtnText: { fontSize: 14 },
 
   divider: { height: 1, backgroundColor: '#2A2A2A', marginBottom: 12 },
 

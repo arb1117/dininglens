@@ -193,6 +193,25 @@ export default function EstimateScreen({ navigation, route }: Props) {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [searchQuery, isDiningHallMode, mealLog]);
 
+  // Handle item added from SearchScreen via "Add to Meal"
+  useEffect(() => {
+    const ai = route.params?.addedItem;
+    if (!ai) return;
+    const newItem: NormalizedItem = {
+      id: `search-${Date.now()}`,
+      name: ai.name,
+      cal: ai.cal,
+      protein: ai.protein,
+      carbs: ai.carbs,
+      fat: ai.fat,
+      manuallyAdded: true,
+    };
+    setItems(prev => [...prev, newItem]);
+    setPortions(prev => ({ ...prev, [newItem.id]: 'medium' as VisualPortion }));
+    navigation.setParams({ addedItem: undefined });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.addedItem]);
+
   useEffect(() => {
     navigation.setOptions({
       headerLeft: () => (

@@ -1,220 +1,397 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
-  ActivityIndicator, StyleSheet,
+  ActivityIndicator, StyleSheet, Modal, ScrollView,
+  Keyboard, Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { useMealContext } from '../context/MealContext';
+import { useMealContext, MacroItem } from '../context/MealContext';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Search'>;
 
-type SearchResult = {
+type FilterKey = 'all' | 'myfoods' | 'common' | 'branded';
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'all',     label: 'All' },
+  { key: 'myfoods', label: 'My Foods' },
+  { key: 'common',  label: 'Common' },
+  { key: 'branded', label: 'Branded' },
+];
+
+type ApiResult = {
   name: string;
   serving_size: string;
   calories: number;
   protein: number;
   carbs: number;
   fat: number;
+  source?: string;
 };
 
-type Multiplier = { label: string; value: number; portion: 'Small' | 'Normal' | 'Large' | 'Double' };
+type DisplayResult = {
+  name: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  serving_size: string;
+};
 
-const MULTIPLIERS: Multiplier[] = [
-  { label: '½x', value: 0.5, portion: 'Small' },
-  { label: '1x', value: 1.0, portion: 'Normal' },
-  { label: '2x', value: 2.0, portion: 'Double' },
-];
+type SheetState = {
+  name: string;
+  baseCal: number;
+  baseProtein: number;
+  baseCarbs: number;
+  baseFat: number;
+  servingSize: string;
+};
 
 function round1(n: number) { return Math.round(n * 10) / 10; }
 
 export default function SearchScreen({ navigation, route }: Props) {
-  const { addMeal } = useMealContext();
+  const { addMeal, mealLog, updateMealItem } = useMealContext();
+  const params = route?.params;
 
-  const [query, setQuery] = useState(route?.params?.query ?? '');
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [multiplier, setMultiplier] = useState<Multiplier>(MULTIPLIERS[1]);
-  const [loggedName, setLoggedName] = useState<string | null>(null);
+  const editMode     = params?.editMode    ?? false;
+  const mealId       = params?.mealId;
+  const itemIndex    = params?.itemIndex;
+  const existingItem = params?.existingItem;
 
+  const [query, setQuery] = useState(
+    params?.query ?? (editMode && existingItem ? existingItem.name : '')
+  );
+  const [apiResults, setApiResults] = useState<ApiResult[]>([]);
+  const [loading, setLoading]       = useState(false);
+  const [filter, setFilter]         = useState<FilterKey>('all');
+  const [sheet, setSheet]           = useState<SheetState | null>(null);
+  const [servings, setServings]     = useState(1.0);
+  const [toastName, setToastName]   = useState<string | null>(null);
+
+  // Build My Foods index from mealLog
+  const myFoods = useMemo(() => {
+    const map: Record<string, { item: MacroItem; count: number }> = {};
+    mealLog.forEach(meal => {
+      (meal.items ?? []).forEach(item => {
+        const key = item.name.toLowerCase();
+        if (!map[key]) map[key] = { item, count: 0 };
+        map[key].count++;
+      });
+    });
+    return map;
+  }, [mealLog]);
+
+  const myFoodResults = useMemo((): DisplayResult[] => {
+    if (!query.trim()) return [];
+    return Object.values(myFoods)
+      .filter(({ item }) => item.name.toLowerCase().includes(query.toLowerCase()))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+      .map(({ item }) => ({
+        name:        item.name,
+        calories:    item.cal,
+        protein:     item.protein,
+        carbs:       item.carbs,
+        fat:         item.fat,
+        serving_size: '1 serving',
+      }));
+  }, [myFoods, query]);
+
+  // API search — debounced 400ms, skipped when filter is myfoods
   useEffect(() => {
-    if (!query.trim()) {
-      setResults([]);
-      setSelectedIndex(null);
+    if (filter === 'myfoods' || !query.trim()) {
+      setApiResults([]);
+      setLoading(false);
       return;
     }
-    const timer = setTimeout(async () => {
+    const t = setTimeout(async () => {
       setLoading(true);
       try {
         const res = await fetch(`${SERVER_URL}/search?q=${encodeURIComponent(query.trim())}`);
-        if (!res.ok) throw new Error(`Server ${res.status}`);
+        if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
-        setResults(Array.isArray(data) ? data : []);
-        setSelectedIndex(null);
-      } catch (err) {
-        console.error('[search]', err);
-        setResults([]);
+        setApiResults(Array.isArray(data) ? data : []);
+      } catch {
+        setApiResults([]);
       } finally {
         setLoading(false);
       }
     }, 400);
-    return () => clearTimeout(timer);
-  }, [query]);
+    return () => clearTimeout(t);
+  }, [query, filter]);
 
-  function handleLog(item: SearchResult) {
-    const m = multiplier.value;
-    const mealItem = {
-      name: item.name,
-      portion: multiplier.portion,
-      cal: round1(item.calories * m),
-      protein: round1(item.protein * m),
-      carbs: round1(item.carbs * m),
-      fat: round1(item.fat * m),
-    };
-    addMeal({
-      id: String(Date.now()),
-      timestamp: new Date().toLocaleString(),
-      items: [mealItem],
-      totals: { cal: mealItem.cal, protein: mealItem.protein, carbs: mealItem.carbs, fat: mealItem.fat },
+  const displayResults = useMemo((): DisplayResult[] => {
+    if (filter === 'myfoods') return myFoodResults;
+
+    const apiDisplay = apiResults.filter(r => {
+      if (filter === 'common')  return !r.source || r.source === 'usda';
+      if (filter === 'branded') return r.source === 'openfoodfacts';
+      return true;
     });
-    setLoggedName(item.name);
-    setTimeout(() => navigation.navigate('Camera'), 900);
+
+    if (filter !== 'all') return apiDisplay;
+
+    // 'all': my foods first, then deduped API results
+    const myNames = new Set(myFoodResults.map(r => r.name.toLowerCase()));
+    return [
+      ...myFoodResults,
+      ...apiDisplay.filter(r => !myNames.has(r.name.toLowerCase())),
+    ];
+  }, [filter, apiResults, myFoodResults]);
+
+  // Edit mode: auto-open sheet with existing item data
+  useEffect(() => {
+    if (editMode && existingItem) {
+      setSheet({
+        name:        existingItem.name,
+        baseCal:     existingItem.cal,
+        baseProtein: existingItem.protein,
+        baseCarbs:   existingItem.carbs,
+        baseFat:     existingItem.fat,
+        servingSize: existingItem.portion,
+      });
+      setServings(1.0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function openSheet(item: DisplayResult) {
+    Keyboard.dismiss();
+    setSheet({
+      name:        item.name,
+      baseCal:     item.calories,
+      baseProtein: item.protein,
+      baseCarbs:   item.carbs,
+      baseFat:     item.fat,
+      servingSize: item.serving_size,
+    });
+    setServings(1.0);
   }
 
+  function stepServings(delta: number) {
+    setServings(prev => {
+      const next = Math.round((prev + delta) * 2) / 2;
+      return Math.min(10, Math.max(0.5, next));
+    });
+  }
+
+  const scaledCal     = sheet ? Math.round(sheet.baseCal     * servings) : 0;
+  const scaledProtein = sheet ? round1(sheet.baseProtein * servings) : 0;
+  const scaledCarbs   = sheet ? round1(sheet.baseCarbs   * servings) : 0;
+  const scaledFat     = sheet ? round1(sheet.baseFat     * servings) : 0;
+
+  function buildItem(): MacroItem {
+    return {
+      name:    sheet!.name,
+      portion: servings === 1 ? '1 serving' : `${servings} servings`,
+      cal:     scaledCal,
+      protein: scaledProtein,
+      carbs:   scaledCarbs,
+      fat:     scaledFat,
+    };
+  }
+
+  function handleLogIt() {
+    const item = buildItem();
+    setSheet(null);
+    addMeal({
+      id:        String(Date.now()),
+      timestamp: new Date().toLocaleString(),
+      items:     [item],
+      totals:    { cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
+    });
+    setToastName(item.name);
+    setTimeout(() => { setToastName(null); navigation.navigate('Camera'); }, 1200);
+  }
+
+  function handleAddToMeal() {
+    const item = buildItem();
+    setSheet(null);
+    navigation.navigate('Estimate', {
+      addedItem: { name: item.name, cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
+    });
+  }
+
+  function handleUpdate() {
+    if (mealId == null || itemIndex == null) return;
+    const item = buildItem();
+    updateMealItem(mealId, itemIndex, item);
+    setSheet(null);
+    navigation.goBack();
+  }
+
+  const isEstimate = params?.context === 'estimate';
+
   return (
-    <View style={styles.container}>
-      {loggedName !== null && (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>✓ {loggedName} logged</Text>
+    <View style={s.container}>
+      {toastName !== null && (
+        <View style={s.toast}>
+          <Text style={s.toastText}>✓ {toastName} logged</Text>
         </View>
       )}
 
-      <View style={styles.searchBar}>
+      <View style={s.searchBar}>
         <TextInput
-          style={styles.input}
-          placeholder="Search any food, supplement, or product…"
+          style={s.input}
+          placeholder="Search any food…"
           placeholderTextColor="#555"
           value={query}
           onChangeText={setQuery}
-          autoFocus
+          autoFocus={!editMode}
           returnKeyType="search"
           clearButtonMode="while-editing"
         />
       </View>
 
-      {loading && (
-        <View style={styles.loadingRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={s.filterRow}
+        contentContainerStyle={s.filterContent}
+      >
+        {FILTERS.map(({ key, label }) => (
+          <TouchableOpacity
+            key={key}
+            style={[s.chip, filter === key && s.chipActive]}
+            onPress={() => setFilter(key)}
+          >
+            <Text style={[s.chipText, filter === key && s.chipTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {loading && filter !== 'myfoods' && (
+        <View style={s.loadingRow}>
           <ActivityIndicator color="#00E5A0" size="small" />
-          <Text style={styles.loadingText}>Searching…</Text>
+          <Text style={s.loadingText}>Searching…</Text>
         </View>
       )}
 
-      {!loading && results.length === 0 && !query.trim() && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>🔍</Text>
-          <Text style={styles.emptyText}>Search for any food, supplement, or product</Text>
+      {!loading && displayResults.length === 0 && !query.trim() && (
+        <View style={s.emptyState}>
+          <Text style={s.emptyIcon}>🔍</Text>
+          <Text style={s.emptyText}>Search for any food, supplement, or product</Text>
         </View>
       )}
 
-      {!loading && results.length === 0 && query.trim().length > 0 && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No results for "{query}"</Text>
+      {!loading && displayResults.length === 0 && !!query.trim() && (
+        <View style={s.emptyState}>
+          <Text style={s.emptyText}>No results for "{query}"</Text>
         </View>
       )}
 
       <FlatList
-        data={results}
+        data={displayResults}
         keyExtractor={(_, i) => String(i)}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.list}
-        renderItem={({ item, index }) => {
-          const expanded = selectedIndex === index;
-          const m = expanded ? multiplier.value : 1.0;
-          return (
-            <TouchableOpacity
-              style={[styles.resultCard, expanded && styles.resultCardExpanded]}
-              onPress={() => {
-                if (selectedIndex === index) {
-                  setSelectedIndex(null);
-                } else {
-                  setSelectedIndex(index);
-                  setMultiplier(MULTIPLIERS[1]);
-                }
-              }}
-              activeOpacity={0.8}
-            >
-              <View style={styles.resultRow}>
-                <View style={styles.resultLeft}>
-                  <Text style={styles.resultName} numberOfLines={2}>{item.name}</Text>
-                  <Text style={styles.resultServing}>{item.serving_size}</Text>
-                </View>
-                <View style={styles.resultRight}>
-                  <Text style={styles.resultCal}>{Math.round(item.calories * m)}</Text>
-                  <Text style={styles.resultCalLabel}>cal</Text>
-                </View>
-              </View>
-
-              <View style={styles.macroPills}>
-                <Text style={styles.macroPill}>{round1(item.protein * m)}g P</Text>
-                <Text style={styles.macroPill}>{round1(item.carbs * m)}g C</Text>
-                <Text style={styles.macroPill}>{round1(item.fat * m)}g F</Text>
-              </View>
-
-              {expanded && (
-                <View style={styles.portionRow}>
-                  <View style={styles.multiplierBtns}>
-                    {MULTIPLIERS.map(opt => (
-                      <TouchableOpacity
-                        key={opt.label}
-                        style={[styles.multBtn, multiplier.value === opt.value && styles.multBtnActive]}
-                        onPress={() => setMultiplier(opt)}
-                      >
-                        <Text style={[styles.multBtnText, multiplier.value === opt.value && styles.multBtnTextActive]}>
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  <TouchableOpacity style={styles.logBtn} onPress={() => handleLog(item)}>
-                    <Text style={styles.logBtnText}>Log</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        }}
+        contentContainerStyle={s.list}
+        renderItem={({ item }) => (
+          <TouchableOpacity style={s.resultCard} onPress={() => openSheet(item)} activeOpacity={0.8}>
+            <Text style={s.resultName} numberOfLines={2}>{item.name}</Text>
+            <Text style={s.resultMeta}>~{Math.round(item.calories)} cal per serving</Text>
+          </TouchableOpacity>
+        )}
       />
+
+      {/* Bottom sheet */}
+      <Modal
+        visible={sheet !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSheet(null)}
+      >
+        <View style={s.sheetWrap}>
+          <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={() => setSheet(null)} />
+          <View style={s.sheet}>
+            <View style={s.handle} />
+
+            <Text style={s.sheetName} numberOfLines={2}>{sheet?.name}</Text>
+
+            <Text style={s.sheetCal}>{scaledCal}</Text>
+            <Text style={s.sheetCalLabel}>cal</Text>
+
+            <View style={s.pills}>
+              <View style={[s.pill, s.pillGreen]}>
+                <Text style={[s.pillText, s.pillTextGreen]}>{scaledProtein}g protein</Text>
+              </View>
+              <View style={[s.pill, s.pillOrange]}>
+                <Text style={[s.pillText, s.pillTextOrange]}>{scaledCarbs}g carbs</Text>
+              </View>
+              <View style={[s.pill, s.pillRed]}>
+                <Text style={[s.pillText, s.pillTextRed]}>{scaledFat}g fat</Text>
+              </View>
+            </View>
+
+            <View style={s.stepperRow}>
+              <TouchableOpacity
+                style={[s.stepBtn, servings <= 0.5 && s.stepBtnDisabled]}
+                onPress={() => stepServings(-0.5)}
+                disabled={servings <= 0.5}
+              >
+                <Text style={s.stepBtnText}>−</Text>
+              </TouchableOpacity>
+              <Text style={s.servingsVal}>{servings}</Text>
+              <TouchableOpacity
+                style={[s.stepBtn, servings >= 10 && s.stepBtnDisabled]}
+                onPress={() => stepServings(0.5)}
+                disabled={servings >= 10}
+              >
+                <Text style={s.stepBtnText}>+</Text>
+              </TouchableOpacity>
+              <Text style={s.servingsUnit}>serving{servings !== 1 ? 's' : ''}</Text>
+            </View>
+
+            {editMode ? (
+              <TouchableOpacity style={s.logBtn} onPress={handleUpdate}>
+                <Text style={s.logBtnText}>Update</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <TouchableOpacity style={s.logBtn} onPress={handleLogIt}>
+                  <Text style={s.logBtnText}>Log It</Text>
+                </TouchableOpacity>
+                {isEstimate && (
+                  <TouchableOpacity style={s.addBtn} onPress={handleAddToMeal}>
+                    <Text style={s.addBtnText}>Add to Meal</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F0F0F' },
 
   toast: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    backgroundColor: '#00E5A0',
-    paddingVertical: 14,
-    alignItems: 'center',
-    zIndex: 10,
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+    backgroundColor: '#00E5A0', paddingVertical: 14, alignItems: 'center',
   },
   toastText: { color: '#0F0F0F', fontWeight: '700', fontSize: 15 },
 
   searchBar: { padding: 16, paddingBottom: 8 },
   input: {
-    backgroundColor: '#1A1A1A',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#2A2A2A',
+    backgroundColor: '#1A1A1A', borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 12,
+    fontSize: 16, color: '#FFFFFF',
+    borderWidth: 1, borderColor: '#2A2A2A',
   },
+
+  filterRow: { flexGrow: 0, paddingBottom: 4 },
+  filterContent: { paddingHorizontal: 16, gap: 8, flexDirection: 'row' },
+  chip: {
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  chipActive: { backgroundColor: '#00E5A0', borderColor: '#00E5A0' },
+  chipText: { fontSize: 14, fontWeight: '600', color: '#8A8A8A' },
+  chipTextActive: { color: '#0F0F0F' },
 
   loadingRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -226,41 +403,72 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyText: { fontSize: 15, color: '#8A8A8A', textAlign: 'center' },
 
-  list: { padding: 12, paddingTop: 4 },
-
+  list: { padding: 12, paddingTop: 8 },
   resultCard: {
-    backgroundColor: '#1A1A1A', borderRadius: 12, padding: 14, marginBottom: 8,
+    backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, marginBottom: 8,
     borderWidth: 1, borderColor: '#2A2A2A',
   },
-  resultCardExpanded: { borderColor: '#00E5A0' },
+  resultName: { fontSize: 15, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
+  resultMeta: { fontSize: 13, color: '#8A8A8A' },
 
-  resultRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  resultLeft: { flex: 1, marginRight: 12 },
-  resultName: { fontSize: 15, fontWeight: '600', color: '#FFFFFF', marginBottom: 3 },
-  resultServing: { fontSize: 12, color: '#8A8A8A' },
-  resultRight: { alignItems: 'flex-end' },
-  resultCal: { fontSize: 22, fontWeight: '800', color: '#FFFFFF' },
-  resultCalLabel: { fontSize: 11, color: '#8A8A8A' },
-
-  macroPills: { flexDirection: 'row', gap: 6, marginTop: 8 },
-  macroPill: {
-    fontSize: 12, color: '#8A8A8A', backgroundColor: '#2A2A2A',
-    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
+  // Sheet
+  sheetWrap: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
-
-  portionRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 10 },
-  multiplierBtns: { flexDirection: 'row', gap: 8, flex: 1 },
-  multBtn: {
-    flex: 1, paddingVertical: 9, borderRadius: 8,
-    backgroundColor: '#2A2A2A', alignItems: 'center',
+  sheet: {
+    backgroundColor: '#1A1A1A',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: Platform.OS === 'ios' ? 44 : 28,
+    borderTopWidth: 1, borderColor: '#2A2A2A',
   },
-  multBtnActive: { backgroundColor: '#00E5A0' },
-  multBtnText: { fontSize: 14, fontWeight: '600', color: '#8A8A8A' },
-  multBtnTextActive: { color: '#0F0F0F' },
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: '#3A3A3A', alignSelf: 'center', marginBottom: 20,
+  },
+  sheetName: {
+    fontSize: 20, fontWeight: '700', color: '#FFFFFF',
+    textAlign: 'center', marginBottom: 16,
+  },
+  sheetCal: { fontSize: 56, fontWeight: '900', color: '#FFFFFF', textAlign: 'center' },
+  sheetCalLabel: { fontSize: 16, color: '#8A8A8A', textAlign: 'center', marginBottom: 20 },
+
+  pills: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginBottom: 24 },
+  pill: { borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
+  pillText: { fontSize: 13, fontWeight: '700' },
+  pillGreen:       { backgroundColor: '#1A3A1A' },
+  pillTextGreen:   { color: '#5CFF7C' },
+  pillOrange:      { backgroundColor: '#3A2A00' },
+  pillTextOrange:  { color: '#FFA040' },
+  pillRed:         { backgroundColor: '#3A1010' },
+  pillTextRed:     { color: '#FF6B6B' },
+
+  stepperRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 14, marginBottom: 24,
+  },
+  stepBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center',
+  },
+  stepBtnDisabled: { opacity: 0.3 },
+  stepBtnText: { fontSize: 26, color: '#FFFFFF', lineHeight: 30 },
+  servingsVal: {
+    fontSize: 24, fontWeight: '800', color: '#FFFFFF',
+    minWidth: 44, textAlign: 'center',
+  },
+  servingsUnit: { fontSize: 14, color: '#8A8A8A', fontWeight: '500' },
 
   logBtn: {
-    backgroundColor: '#00E5A0', borderRadius: 8,
-    paddingHorizontal: 22, paddingVertical: 9,
+    backgroundColor: '#00E5A0', borderRadius: 14,
+    paddingVertical: 16, alignItems: 'center', marginBottom: 10,
   },
-  logBtnText: { color: '#0F0F0F', fontWeight: '700', fontSize: 15 },
+  logBtnText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
+  addBtn: {
+    borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+    borderWidth: 1, borderColor: '#2A2A2A', backgroundColor: '#1A1A1A',
+  },
+  addBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
 });

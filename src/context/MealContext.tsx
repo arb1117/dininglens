@@ -21,9 +21,12 @@ export type LoggedMeal = {
   totals: { cal: number; protein: number; carbs: number; fat: number };
 };
 
+function round1(n: number) { return Math.round(n * 10) / 10; }
+
 type MealContextType = {
   mealLog: LoggedMeal[];
   addMeal: (meal: LoggedMeal) => void;
+  updateMealItem: (mealId: string, itemIndex: number, updated: MacroItem) => void;
   menuItems: MenuItem[];
   setMenuItems: (items: MenuItem[]) => void;
   periodLabel: string;
@@ -35,6 +38,7 @@ type MealContextType = {
 const MealContext = createContext<MealContextType>({
   mealLog: [],
   addMeal: () => {},
+  updateMealItem: () => {},
   menuItems: FAKE_MENU,
   setMenuItems: () => {},
   periodLabel: 'Dinner',
@@ -69,9 +73,30 @@ export function MealProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  function updateMealItem(mealId: string, itemIndex: number, updated: MacroItem) {
+    setMealLog(prev => {
+      const next = prev.map(meal => {
+        if (meal.id !== mealId) return meal;
+        const newItems = meal.items.map((item, i) => (i === itemIndex ? updated : item));
+        const totals = newItems.reduce(
+          (acc, item) => ({
+            cal: Math.round(acc.cal + item.cal),
+            protein: round1(acc.protein + item.protein),
+            carbs: round1(acc.carbs + item.carbs),
+            fat: round1(acc.fat + item.fat),
+          }),
+          { cal: 0, protein: 0, carbs: 0, fat: 0 }
+        );
+        return { ...meal, items: newItems, totals };
+      });
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }
+
   return (
     <MealContext.Provider
-      value={{ mealLog, addMeal, menuItems, setMenuItems, periodLabel, setPeriodLabel, venue, setVenue }}
+      value={{ mealLog, addMeal, updateMealItem, menuItems, setMenuItems, periodLabel, setPeriodLabel, venue, setVenue }}
     >
       {children}
     </MealContext.Provider>

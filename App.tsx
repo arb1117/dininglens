@@ -15,9 +15,21 @@ import { AnalysisResult } from './src/services/visionService';
 export type RootStackParamList = {
   Onboarding: undefined;
   Camera: undefined;
-  Estimate: { analysisResult?: AnalysisResult; imageBase64?: string; source?: string };
+  Estimate: {
+    analysisResult?: AnalysisResult;
+    imageBase64?: string;
+    source?: string;
+    addedItem?: { name: string; cal: number; protein: number; carbs: number; fat: number };
+  };
   History: undefined;
-  Search: { query?: string; context?: string } | undefined;
+  Search: {
+    query?: string;
+    context?: string;
+    editMode?: boolean;
+    mealId?: string;
+    itemIndex?: number;
+    existingItem?: { name: string; portion: string; cal: number; protein: number; carbs: number; fat: number };
+  } | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

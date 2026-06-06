@@ -1,7 +1,6 @@
 import { MenuItem } from './menuService';
 
-// LAN IP of the dev machine — update if your IP changes
-const SERVER_URL = 'http://192.168.1.71:3001';
+const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
 
 export type DetectedItem = {
   name: string;

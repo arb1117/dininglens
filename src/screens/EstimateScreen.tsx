@@ -144,9 +144,6 @@ export default function EstimateScreen({ navigation, route }: Props) {
             <Text style={styles.venueCardName}>{venue.name}</Text>
             {' menu'}
           </Text>
-          <TouchableOpacity>
-            <Text style={styles.venueCardLink}>View menu</Text>
-          </TouchableOpacity>
         </View>
       )}
 
@@ -224,13 +221,11 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   header: { fontSize: 22, fontWeight: '800', color: '#500000', marginBottom: 12, marginTop: 8 },
   venueCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: '#edf7ed', borderRadius: 10, paddingVertical: 10,
     paddingHorizontal: 14, marginBottom: 16,
   },
   venueCardText: { fontSize: 13, color: '#333' },
   venueCardName: { fontWeight: '700', color: '#2e7d32' },
-  venueCardLink: { fontSize: 13, color: '#500000', fontWeight: '600', textDecorationLine: 'underline' },
   fallbackCard: {
     backgroundColor: '#fff8e1', borderRadius: 10, paddingVertical: 10,
     paddingHorizontal: 14, marginBottom: 16,

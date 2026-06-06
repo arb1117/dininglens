@@ -60,6 +60,8 @@ function fatSignal(g: number) {
 
 function round1(n: number) { return Math.round(n * 10) / 10; }
 
+type ItemSource = 'ai' | 'menu' | 'barcode' | 'manual';
+
 type NormalizedItem = {
   id: string;
   name: string;
@@ -69,11 +71,20 @@ type NormalizedItem = {
   fat: number;
   confidence?: number;
   manuallyAdded?: boolean;
+  source?: ItemSource;
+};
+
+const SOURCE_BADGE: Record<ItemSource, string> = {
+  ai:     '📷 AI estimated',
+  menu:   '📋 Menu matched',
+  barcode:'📦 Barcode scanned',
+  manual: '🔍 Manually added',
 };
 
 function buildInitialItems(
   analysisResult: Props['route']['params']['analysisResult'],
-  menuItems: ReturnType<typeof useMealContext>['menuItems']
+  menuItems: ReturnType<typeof useMealContext>['menuItems'],
+  routeSource?: string
 ): NormalizedItem[] {
   if (
     analysisResult?.reason === 'image_quality' ||
@@ -91,6 +102,7 @@ function buildInitialItems(
       protein: item.protein,
       carbs: item.carbs,
       fat: item.fat,
+      source: 'menu' as ItemSource,
     }));
   }
 
@@ -112,11 +124,13 @@ function buildInitialItems(
           carbs: round1(match.carbs * scale),
           fat: round1(match.fat * scale),
           confidence: detected.confidence,
+          source: 'menu' as ItemSource,
         };
       })
       .filter((x) => x !== null) as NormalizedItem[];
   }
 
+  const src: ItemSource = routeSource === 'barcode' ? 'barcode' : 'ai';
   return analysisResult.detectedItems.map((item, i) => ({
     id: `generic-${i}`,
     name: item.name,
@@ -125,6 +139,7 @@ function buildInitialItems(
     carbs: item.carbs ?? 0,
     fat: item.fat ?? 0,
     confidence: item.confidence,
+    source: src,
   }));
 }
 
@@ -154,11 +169,11 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const { analysisResult, imageBase64, source, analysisError } = route.params;
 
   const [items, setItems] = useState<NormalizedItem[]>(() =>
-    buildInitialItems(analysisResult, menuItems)
+    buildInitialItems(analysisResult, menuItems, source)
   );
   const [portions, setPortions] = useState<Record<string, VisualPortion>>(
     () => Object.fromEntries(
-      buildInitialItems(analysisResult, menuItems).map(i => [i.id, 'medium' as VisualPortion])
+      buildInitialItems(analysisResult, menuItems, source).map(i => [i.id, 'medium' as VisualPortion])
     )
   );
 
@@ -207,6 +222,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
       carbs: ai.carbs,
       fat: ai.fat,
       manuallyAdded: true,
+      source: 'manual',
     };
     setItems(prev => [...prev, newItem]);
     setPortions(prev => ({ ...prev, [newItem.id]: 'medium' as VisualPortion }));
@@ -269,6 +285,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
         carbs: typeof data.carbs === 'number' ? data.carbs : 0,
         fat: typeof data.fat === 'number' ? data.fat : 0,
         manuallyAdded: true,
+        source: 'manual',
       };
       setItems(prev => [...prev, newItem]);
       setPortions(prev => ({ ...prev, [newItem.id]: 'medium' }));
@@ -290,6 +307,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
       carbs: menuItem.carbs,
       fat: menuItem.fat,
       manuallyAdded: true,
+      source: 'manual',
     };
     setItems(prev => [...prev, newItem]);
     setPortions(prev => ({ ...prev, [newItem.id]: 'medium' }));
@@ -306,6 +324,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
       carbs: suggestion.item.carbs,
       fat: suggestion.item.fat,
       manuallyAdded: true,
+      source: 'manual',
     };
     setItems(prev => [...prev, newItem]);
     setPortions(prev => ({ ...prev, [newItem.id]: 'medium' }));
@@ -335,7 +354,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
         throw new Error(`Server ${res.status}: ${errBody.error ?? 'unknown error'}`);
       }
       const newResult = await res.json() as AnalysisResult;
-      const newItems = buildInitialItems(newResult, menuItems);
+      const newItems = buildInitialItems(newResult, menuItems, source);
       setItems(newItems);
       setPortions(Object.fromEntries(newItems.map(i => [i.id, 'medium' as VisualPortion])));
       setFeedbackText('');
@@ -472,7 +491,14 @@ export default function EstimateScreen({ navigation, route }: Props) {
                 onSwipeableOpen={() => removeItem(item.id)}
               >
                 <View style={styles.itemCard}>
-                  <Text style={styles.itemName}>{item.name}</Text>
+                  <View style={styles.itemHeaderRow}>
+                    <Text style={styles.itemName}>{item.name}</Text>
+                    {item.source && (
+                      <View style={styles.sourceBadge}>
+                        <Text style={styles.sourceBadgeText}>{SOURCE_BADGE[item.source]}</Text>
+                      </View>
+                    )}
+                  </View>
 
                   {/* Visual portion picker */}
                   <View style={styles.visualPortionRow}>
@@ -498,19 +524,11 @@ export default function EstimateScreen({ navigation, route }: Props) {
                     {scaled.protein}g protein · {scaled.carbs}g carbs · {scaled.fat}g fat
                   </Text>
 
-                  {!item.manuallyAdded && item.confidence !== undefined && (
-                    <View style={styles.confidenceRow}>
-                      <View style={styles.confidenceBarTrack}>
-                        <View style={[
-                          styles.confidenceBarFill,
-                          { width: `${Math.round(item.confidence * 100)}%` as any },
-                          item.confidence < 0.6 && styles.confidenceBarLow,
-                        ]} />
-                      </View>
-                      <Text style={[styles.confidenceText, item.confidence < 0.6 && styles.confidenceLow]}>
-                        {Math.round(item.confidence * 100)}% sure
-                      </Text>
-                    </View>
+                  {/* Confidence — amber only for AI estimates below 0.6 */}
+                  {item.source === 'ai' && item.confidence !== undefined && item.confidence < 0.6 && (
+                    <Text style={styles.confidenceAmber}>
+                      ~{Math.round(item.confidence * 100)}% sure
+                    </Text>
                   )}
                 </View>
               </Swipeable>
@@ -560,6 +578,15 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
         {/* Totals card with traffic lights */}
         <View style={styles.totalsCard}>
+          {venue && !isFallback && !imageQualityError && !noFoodError && (
+            <Text style={styles.estimateStatusTeal}>✓ Using {venue.name} menu</Text>
+          )}
+          {source === 'barcode' && (
+            <Text style={styles.estimateStatusTeal}>✓ Exact product data</Text>
+          )}
+          {!venue && source !== 'barcode' && imageBase64 && !isFallback && !imageQualityError && !noFoodError && (
+            <Text style={styles.estimateStatusSecondary}>AI estimate — tap to correct</Text>
+          )}
           <Text style={styles.totalsTitle}>This meal</Text>
           <Text style={styles.totalCalories}>{totals.cal} calories</Text>
           <Text style={styles.totalMacros}>
@@ -759,7 +786,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A', borderRadius: 12, padding: 14, marginBottom: 12,
     borderWidth: 1, borderColor: '#2A2A2A',
   },
-  itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 10 },
+  itemHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
+  itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', flex: 1 },
+  sourceBadge: {
+    backgroundColor: '#1A1A2A',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: '#2A2A3A',
+    flexShrink: 0,
+  },
+  sourceBadgeText: { fontSize: 10, color: '#8A8AAA', fontWeight: '600' },
+  confidenceAmber: { fontSize: 12, color: '#FF9500', marginTop: 6, fontStyle: 'italic' },
 
   // Visual portion picker
   visualPortionRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
@@ -776,7 +815,7 @@ const styles = StyleSheet.create({
   itemCalories: { fontSize: 28, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
   itemMacros: { fontSize: 13, color: '#8A8A8A' },
 
-  // Confidence
+  // Confidence (kept for backward compat, unused)
   confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   confidenceBarTrack: { width: 60, height: 4, backgroundColor: '#2A2A2A', borderRadius: 2, overflow: 'hidden' },
   confidenceBarFill: { height: 4, backgroundColor: '#00E5A0', borderRadius: 2 },
@@ -826,6 +865,12 @@ const styles = StyleSheet.create({
   totalsCard: {
     backgroundColor: '#1A1A1A', borderRadius: 14, padding: 20,
     marginBottom: 20, borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  estimateStatusTeal: {
+    fontSize: 12, color: '#00E5A0', fontWeight: '600', marginBottom: 10,
+  },
+  estimateStatusSecondary: {
+    fontSize: 12, color: '#8A8A8A', fontStyle: 'italic', marginBottom: 10,
   },
   totalsTitle: {
     fontSize: 12, fontWeight: '700', color: '#8A8A8A',

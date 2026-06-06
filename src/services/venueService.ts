@@ -6,7 +6,7 @@ export type Venue = {
   institution: string;
   type: 'dining_hall' | 'restaurant';
   locationId: string;
-  provider: 'dineoncampus' | 'nutritionix' | 'generic';
+  provider: 'dineoncampus' | 'generic';
   coords: { lat: number; lon: number };
 };
 
@@ -69,7 +69,7 @@ export async function detectVenue(): Promise<Venue | null> {
     }
   }
 
-  // Check for a nearby restaurant via Nutritionix (stub returns null until keys configured)
+  // Check for a nearby restaurant (stub always returns null — geolocation needs a paid API)
   try {
     const { detectNearbyRestaurant } = await import('./restaurantService');
     const restaurant = await detectNearbyRestaurant(userCoords);
@@ -80,12 +80,12 @@ export async function detectVenue(): Promise<Venue | null> {
         institution: restaurant.chain,
         type: 'restaurant',
         locationId: restaurant.id,
-        provider: 'nutritionix',
+        provider: 'generic',
         coords: userCoords,
       };
     }
   } catch {
-    // restaurantService not available — continue with dining hall result
+    // continue with dining hall result
   }
 
   return nearestHall;

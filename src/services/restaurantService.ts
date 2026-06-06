@@ -14,16 +14,14 @@ export interface RestaurantMenuItem {
   serving_size: string;
 }
 
-// Stub — returns null until Nutritionix keys are configured
-export async function detectNearbyRestaurant(coords: { lat: number; lon: number }): Promise<Restaurant | null> {
-  if (!process.env.NUTRITIONIX_APP_ID) return null;
-  // TODO: POST https://trackapi.nutritionix.com/v2/locations with lat/lon
+// Stub — restaurant geolocation requires a paid API (e.g. Nutritionix /v2/locations).
+// USDA FoodData Central and Open Food Facts do not provide geolocation search.
+// This returns null until a geolocation-capable API is wired in.
+export async function detectNearbyRestaurant(_coords: { lat: number; lon: number }): Promise<Restaurant | null> {
   return null;
 }
 
-// Stub — returns empty until Nutritionix keys are configured
-export async function getRestaurantMenu(restaurant: Restaurant): Promise<RestaurantMenuItem[]> {
-  if (!process.env.NUTRITIONIX_APP_ID) return [];
-  // TODO: fetch menu items for this restaurant chain from Nutritionix
+// Stub — returns empty until a restaurant menu API is wired in.
+export async function getRestaurantMenu(_restaurant: Restaurant): Promise<RestaurantMenuItem[]> {
   return [];
 }

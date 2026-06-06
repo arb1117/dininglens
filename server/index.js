@@ -31,7 +31,48 @@ function extractJSONArray(text) {
   return JSON.parse(stripped.slice(start, end + 1));
 }
 
-// Shared: food-only detection rules applied to all prompts
+// ─── Data sources ──────────────────────────────────────────────────────────
+
+async function searchOpenFoodFacts(query) {
+  const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=5&fields=product_name,brands,serving_size,nutriments`;
+  const res = await fetch(url);
+  const data = await res.json();
+  return (data.products || [])
+    .filter(p => p.product_name && p.nutriments?.['energy-kcal_serving'])
+    .map(p => ({
+      name: `${p.brands ? p.brands.split(',')[0].trim() + ' ' : ''}${p.product_name}`.trim(),
+      serving_size: p.serving_size || '1 serving',
+      calories: Math.round(p.nutriments['energy-kcal_serving'] || 0),
+      protein: Math.round((p.nutriments['proteins_serving'] || 0) * 10) / 10,
+      carbs: Math.round((p.nutriments['carbohydrates_serving'] || 0) * 10) / 10,
+      fat: Math.round((p.nutriments['fat_serving'] || 0) * 10) / 10,
+      source: 'openfoodfacts',
+    }));
+}
+
+async function searchUSDA(query) {
+  const key = process.env.USDA_API_KEY || 'DEMO_KEY';
+  const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${key}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  return (data.foods || []).slice(0, 5).map(f => {
+    const get = name => f.foodNutrients?.find(n => n.nutrientName === name)?.value || 0;
+    return {
+      name: f.description,
+      serving_size: f.servingSize && f.servingSizeUnit
+        ? `${f.servingSize}${f.servingSizeUnit}`
+        : '100g',
+      calories: Math.round(get('Energy')),
+      protein: Math.round(get('Protein') * 10) / 10,
+      carbs: Math.round(get('Carbohydrate, by difference') * 10) / 10,
+      fat: Math.round(get('Total lipid (fat)') * 10) / 10,
+      source: 'usda',
+    };
+  });
+}
+
+// ─── Shared prompt fragments ───────────────────────────────────────────────
+
 const FOOD_PREAMBLE = `You are a food and nutrition analysis assistant. Your job is ONLY to identify food and beverages that appear to be part of the meal being photographed.
 
 STRICT RULES:
@@ -41,7 +82,6 @@ STRICT RULES:
 - If you see food AND background objects, only include the food
 - Do not identify people, hands, or body parts as food items`;
 
-// Supplement/packaged product accuracy guidance — added to generic prompts
 const SUPPLEMENT_GUIDANCE = `For supplements, protein powders, fiber supplements, vitamins, and packaged food products:
 - Identify the specific product and brand if visible on the label
 - Use the ACTUAL nutrition label values if you can read the label in the image
@@ -71,7 +111,6 @@ app.post('/analyze', async (req, res) => {
     const menuList = menuItems
       .map(i => `- ${i.name}: ${i.calories} cal, ${i.protein}g protein, ${i.carbs}g carbs, ${i.fat}g fat`)
       .join('\n');
-
     prompt = `${FOOD_PREAMBLE}
 
 The user has photographed their meal at a dining hall.
@@ -249,49 +288,43 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
 });
 
 // ─── /lookup-nutrition ────────────────────────────────────────────────────────
+// Single-item precise lookup via USDA FoodData Central
 
 app.post('/lookup-nutrition', async (req, res) => {
   console.log('[/lookup-nutrition] request received');
   const { query } = req.body;
   if (!query) return res.status(400).json({ error: 'query is required' });
-
-  if (!process.env.NUTRITIONIX_APP_ID || !process.env.NUTRITIONIX_API_KEY) {
-    return res.status(503).json({ error: 'Nutritionix keys not configured — add NUTRITIONIX_APP_ID and NUTRITIONIX_API_KEY to .env' });
-  }
-
   try {
-    const r = await fetch('https://trackapi.nutritionix.com/v2/natural/nutrients', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-app-id': process.env.NUTRITIONIX_APP_ID,
-        'x-app-key': process.env.NUTRITIONIX_API_KEY,
-      },
-      body: JSON.stringify({ query }),
-    });
-    if (!r.ok) throw new Error(`Nutritionix ${r.status}`);
-    const data = await r.json();
-    const food = data.foods?.[0];
-    if (!food) throw new Error('No results from Nutritionix');
-    res.json({
-      name: food.food_name,
-      calories: food.nf_calories ?? 0,
-      protein: food.nf_protein ?? 0,
-      carbs: food.nf_total_carbohydrate ?? 0,
-      fat: food.nf_total_fat ?? 0,
-    });
+    const results = await searchUSDA(query);
+    if (results.length > 0) return res.json(results[0]);
+    throw new Error('No USDA results for query');
   } catch (err) {
-    console.error('[/lookup-nutrition] Error:', err);
+    console.error('[/lookup-nutrition] Error:', err.message);
     res.status(500).json({ error: err.message ?? String(err) });
   }
 });
 
 // ─── /lookup ─────────────────────────────────────────────────────────────────
+// "Add item manually" on EstimateScreen — tries OFF, falls back to Claude
 
 app.post('/lookup', async (req, res) => {
   console.log('[/lookup] request received');
   const { query } = req.body;
   if (!query) return res.status(400).json({ error: 'query is required' });
+
+  // Try Open Food Facts first (good for branded/packaged products)
+  try {
+    const results = await searchOpenFoodFacts(query);
+    if (results.length > 0) {
+      const r = results[0];
+      console.log('[/lookup] OFF hit:', r.name);
+      return res.json({ name: r.name, calories: r.calories, protein: r.protein, carbs: r.carbs, fat: r.fat });
+    }
+  } catch (err) {
+    console.error('[/lookup] OFF error:', err.message);
+  }
+
+  // Fall back to Claude
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -304,7 +337,7 @@ app.post('/lookup', async (req, res) => {
       ],
     });
     const raw = response.content[0]?.text ?? '';
-    console.log('[/lookup] Raw response:', raw.slice(0, 200));
+    console.log('[/lookup] Claude raw:', raw.slice(0, 200));
     const parsed = extractJSON(raw);
     res.json(parsed);
   } catch (err) {
@@ -314,6 +347,7 @@ app.post('/lookup', async (req, res) => {
 });
 
 // ─── /search ─────────────────────────────────────────────────────────────────
+// Food search for SearchScreen — parallel OFF + USDA, dedup, Claude fallback
 
 app.get('/search', async (req, res) => {
   console.log('[/search] request received');
@@ -321,46 +355,29 @@ app.get('/search', async (req, res) => {
   if (!q) return res.status(400).json({ error: 'q is required' });
   console.log(`[/search] query: "${q}"`);
 
-  // Use Nutritionix instant search if keys are configured
-  if (process.env.NUTRITIONIX_APP_ID && process.env.NUTRITIONIX_API_KEY) {
-    try {
-      const r = await fetch(
-        `https://trackapi.nutritionix.com/v2/search/instant?query=${encodeURIComponent(q)}&branded=true&common=true`,
-        {
-          headers: {
-            'x-app-id': process.env.NUTRITIONIX_APP_ID,
-            'x-app-key': process.env.NUTRITIONIX_API_KEY,
-          },
-        }
-      );
-      if (!r.ok) throw new Error(`Nutritionix ${r.status}`);
-      const data = await r.json();
-      const results = [
-        ...(data.common || []).slice(0, 5).map(i => ({
-          name: i.food_name,
-          serving_size: `${i.serving_qty} ${i.serving_unit}`,
-          calories: i.nf_calories ?? 0,
-          protein: i.nf_protein ?? 0,
-          carbs: i.nf_total_carbohydrate ?? 0,
-          fat: i.nf_total_fat ?? 0,
-        })),
-        ...(data.branded || []).slice(0, 5).map(i => ({
-          name: `${i.brand_name} ${i.food_name}`,
-          serving_size: `${i.serving_qty} ${i.serving_unit}`,
-          calories: i.nf_calories ?? 0,
-          protein: i.nf_protein ?? 0,
-          carbs: i.nf_total_carbohydrate ?? 0,
-          fat: i.nf_total_fat ?? 0,
-        })),
-      ].slice(0, 10);
-      console.log('[/search] Nutritionix results:', results.length);
-      return res.json(results);
-    } catch (err) {
-      console.error('[/search] Nutritionix error, falling back to AI:', err.message);
-    }
+  const [offResults, usdaResults] = await Promise.all([
+    searchOpenFoodFacts(q).catch(err => { console.error('[/search] OFF error:', err.message); return []; }),
+    searchUSDA(q).catch(err => { console.error('[/search] USDA error:', err.message); return []; }),
+  ]);
+
+  console.log(`[/search] OFF: ${offResults.length}, USDA: ${usdaResults.length}`);
+
+  // Deduplicate by lowercased name, OFF results first (more precise for branded products)
+  const seen = new Set();
+  const combined = [...offResults, ...usdaResults].filter(r => {
+    const key = r.name.toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 8);
+
+  if (combined.length > 0) {
+    console.log(`[/search] returning ${combined.length} deduped results`);
+    return res.json(combined);
   }
 
-  // Fallback: Claude
+  // Both sources empty — fall back to Claude
+  console.log('[/search] no real-data results, falling back to Claude AI');
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -373,11 +390,11 @@ app.get('/search', async (req, res) => {
       ],
     });
     const raw = response.content[0]?.text ?? '';
-    console.log('[/search] AI raw:', raw.slice(0, 300));
+    console.log('[/search] Claude raw:', raw.slice(0, 300));
     const parsed = extractJSONArray(raw);
     res.json(parsed);
   } catch (err) {
-    console.error('[/search] Error:', err);
+    console.error('[/search] Claude error:', err);
     res.status(500).json({ error: err.message ?? String(err) });
   }
 });
@@ -390,5 +407,5 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`DiningLens proxy running on :${PORT}`);
   console.log(`ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'present' : 'MISSING'}`);
-  console.log(`NUTRITIONIX: ${process.env.NUTRITIONIX_APP_ID ? 'configured' : 'not configured (using AI fallback)'}`);
+  console.log(`USDA_API_KEY: ${process.env.USDA_API_KEY || 'DEMO_KEY (default)'}`);
 });

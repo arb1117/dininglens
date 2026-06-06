@@ -7,7 +7,7 @@ const STORAGE_KEY = '@dininglens_meal_log';
 
 export type MacroItem = {
   name: string;
-  portion: 'Small' | 'Normal' | 'Large' | 'Double';
+  portion: string;
   cal: number;
   protein: number;
   carbs: number;

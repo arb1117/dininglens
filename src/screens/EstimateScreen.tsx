@@ -15,53 +15,50 @@ const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:300
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estimate'>;
 
-type Portion = 'Small' | 'Normal' | 'Large' | 'Double';
+// ─── Visual portion picker ────────────────────────────────────────────────────
 
-const MULTIPLIERS: Record<Portion, number> = {
-  Small: 0.6,
-  Normal: 1.0,
-  Large: 1.4,
-  Double: 2.0,
+type VisualPortion = 'tiny' | 'small' | 'medium' | 'large' | 'huge';
+
+const VISUAL_PORTIONS: VisualPortion[] = ['tiny', 'small', 'medium', 'large', 'huge'];
+
+const VISUAL_MULTIPLIERS: Record<VisualPortion, number> = {
+  tiny:   0.4,
+  small:  0.7,
+  medium: 1.0,
+  large:  1.5,
+  huge:   2.2,
 };
 
-const PORTIONS: Portion[] = ['Small', 'Normal', 'Large', 'Double'];
+const VISUAL_LABELS: Record<VisualPortion, { emoji: string; label: string }> = {
+  tiny:   { emoji: '🤏', label: 'Tiny'   },
+  small:  { emoji: '✋', label: 'Small'  },
+  medium: { emoji: '🍽', label: 'Medium' },
+  large:  { emoji: '🥣', label: 'Large'  },
+  huge:   { emoji: '📦', label: 'Huge'   },
+};
 
-type Unit = 'g' | 'ml' | 'oz' | 'cup' | 'tbsp' | 'serving';
-const ALL_UNITS: Unit[] = ['g', 'ml', 'oz', 'cup', 'tbsp', 'serving'];
+// ─── Macro traffic lights ─────────────────────────────────────────────────────
+// Thresholds per single meal
 
-function getDefaultUnit(name: string): Unit {
-  const lower = name.toLowerCase();
-  if (/milk|juice|shake|drink|water|broth|soup/.test(lower)) return 'ml';
-  if (/oil|butter|sauce|dressing|syrup/.test(lower)) return 'tbsp';
-  return 'g';
+function proteinSignal(g: number) {
+  if (g >= 25) return '✅';
+  if (g >= 10) return '🟡';
+  return '🔴';
+}
+function carbSignal(g: number) {
+  if (g <= 60)  return '✅';
+  if (g <= 120) return '🟡';
+  return '🔴';
+}
+function fatSignal(g: number) {
+  if (g <= 20) return '✅';
+  if (g <= 40) return '🟡';
+  return '🔴';
 }
 
-function gramsPerUnit(unit: Unit, itemName: string, estimatedGrams: number): number {
-  const lower = itemName.toLowerCase();
-  switch (unit) {
-    case 'g':   return 1;
-    case 'ml':  return 1;
-    case 'oz':  return 28.35;
-    case 'cup':
-      if (/milk|juice|shake|drink|water|broth|soup/.test(lower)) return 240;
-      if (/rice|pasta|grain|oat|cereal/.test(lower)) return 150;
-      return 100;
-    case 'tbsp':
-      if (/oil|butter|sauce|dressing/.test(lower)) return 15;
-      return 12;
-    case 'serving': return Math.max(estimatedGrams, 1);
-    default: return 1;
-  }
-}
+// ─── Normalized item ──────────────────────────────────────────────────────────
 
 function round1(n: number) { return Math.round(n * 10) / 10; }
-
-function multiplierToPortion(m: number): Portion {
-  if (m <= 0.8) return 'Small';
-  if (m <= 1.2) return 'Normal';
-  if (m <= 1.7) return 'Large';
-  return 'Double';
-}
 
 type NormalizedItem = {
   id: string;
@@ -70,9 +67,7 @@ type NormalizedItem = {
   protein: number;
   carbs: number;
   fat: number;
-  initialPortion: Portion;
   confidence?: number;
-  estimatedQuantityGrams?: number;
   manuallyAdded?: boolean;
 };
 
@@ -80,8 +75,6 @@ function buildInitialItems(
   analysisResult: Props['route']['params']['analysisResult'],
   menuItems: ReturnType<typeof useMealContext>['menuItems']
 ): NormalizedItem[] {
-  // Image quality / low confidence errors: start empty so user sees the error banner,
-  // not a confusing set of fallback items
   if (
     analysisResult?.reason === 'image_quality' ||
     analysisResult?.reason === 'low_confidence'
@@ -97,7 +90,6 @@ function buildInitialItems(
       protein: item.protein,
       carbs: item.carbs,
       fat: item.fat,
-      initialPortion: 'Normal' as Portion,
     }));
   }
 
@@ -114,13 +106,11 @@ function buildInitialItems(
         return {
           id: match.id,
           name: match.name,
-          cal: round1(match.calories * scale),
+          cal: Math.round(match.calories * scale),
           protein: round1(match.protein * scale),
           carbs: round1(match.carbs * scale),
           fat: round1(match.fat * scale),
-          initialPortion: 'Normal' as Portion,
           confidence: detected.confidence,
-          estimatedQuantityGrams: detected.estimatedQuantityGrams,
         };
       })
       .filter((x) => x !== null) as NormalizedItem[];
@@ -133,11 +123,11 @@ function buildInitialItems(
     protein: item.protein ?? 0,
     carbs: item.carbs ?? 0,
     fat: item.fat ?? 0,
-    initialPortion: item.estimatedQuantityGrams != null ? 'Normal' : multiplierToPortion(item.portionMultiplier),
     confidence: item.confidence,
-    estimatedQuantityGrams: item.estimatedQuantityGrams,
   }));
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function EstimateScreen({ navigation, route }: Props) {
   const { addMeal, menuItems, venue } = useMealContext();
@@ -146,51 +136,26 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const [items, setItems] = useState<NormalizedItem[]>(() =>
     buildInitialItems(analysisResult, menuItems)
   );
-
-  const [portions, setPortions] = useState<Record<string, Portion>>(
+  const [portions, setPortions] = useState<Record<string, VisualPortion>>(
     () => Object.fromEntries(
-      buildInitialItems(analysisResult, menuItems).map(i => [i.id, i.initialPortion])
+      buildInitialItems(analysisResult, menuItems).map(i => [i.id, 'medium' as VisualPortion])
     )
   );
 
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
 
-  // Add-item modal state
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
 
-  // Re-evaluate state
   const [feedbackText, setFeedbackText] = useState('');
   const [reanalyzing, setReanalyzing] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [hasReanalyzed, setHasReanalyzed] = useState(false);
 
-  const [customGrams, setCustomGrams] = useState<Record<string, number>>(() =>
-    Object.fromEntries(
-      buildInitialItems(analysisResult, menuItems).map(i => [i.id, i.estimatedQuantityGrams ?? 100])
-    )
-  );
-  const [displayUnits, setDisplayUnits] = useState<Record<string, Unit>>(() =>
-    Object.fromEntries(
-      buildInitialItems(analysisResult, menuItems).map(i => [i.id, getDefaultUnit(i.name)])
-    )
-  );
-  const [quantityTexts, setQuantityTexts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      buildInitialItems(analysisResult, menuItems).map(i => {
-        const unit = getDefaultUnit(i.name);
-        const g = i.estimatedQuantityGrams ?? 100;
-        return [i.id, String(round1(g / gramsPerUnit(unit, i.name, g)))];
-      })
-    )
-  );
-  const [unitPickerOpen, setUnitPickerOpen] = useState<string | null>(null);
-
   const isDiningHallMode = venue !== null;
 
-  // Custom header back button — returns to Camera without logging
   useEffect(() => {
     navigation.setOptions({
       headerLeft: () => (
@@ -208,21 +173,12 @@ export default function EstimateScreen({ navigation, route }: Props) {
     [menuItems, searchQuery]
   );
 
-  function getPortionFor(id: string): Portion { return portions[id] ?? 'Normal'; }
+  function getPortionFor(id: string): VisualPortion { return portions[id] ?? 'medium'; }
 
-  function getScaled(item: NormalizedItem, portion: Portion, baseGrams?: number) {
-    const m = MULTIPLIERS[portion];
-    if (baseGrams != null && item.estimatedQuantityGrams != null && item.estimatedQuantityGrams > 0) {
-      const factor = (baseGrams * m) / item.estimatedQuantityGrams;
-      return {
-        cal:     round1(item.cal     * factor),
-        protein: round1(item.protein * factor),
-        carbs:   round1(item.carbs   * factor),
-        fat:     round1(item.fat     * factor),
-      };
-    }
+  function getScaled(item: NormalizedItem, portion: VisualPortion) {
+    const m = VISUAL_MULTIPLIERS[portion];
     return {
-      cal:     round1(item.cal     * m),
+      cal:     Math.round(item.cal     * m),
       protein: round1(item.protein * m),
       carbs:   round1(item.carbs   * m),
       fat:     round1(item.fat     * m),
@@ -233,15 +189,6 @@ export default function EstimateScreen({ navigation, route }: Props) {
     swipeableRefs.current[id]?.close();
     setItems(prev => prev.filter(i => i.id !== id));
     setPortions(prev => { const next = { ...prev }; delete next[id]; return next; });
-    setCustomGrams(prev => { const next = { ...prev }; delete next[id]; return next; });
-    setDisplayUnits(prev => { const next = { ...prev }; delete next[id]; return next; });
-    setQuantityTexts(prev => { const next = { ...prev }; delete next[id]; return next; });
-  }
-
-  function openAddModal() {
-    setSearchQuery('');
-    setLookupError(null);
-    setAddModalVisible(true);
   }
 
   async function handleLookup() {
@@ -263,18 +210,14 @@ export default function EstimateScreen({ navigation, route }: Props) {
         protein: typeof data.protein === 'number' ? data.protein : 0,
         carbs: typeof data.carbs === 'number' ? data.carbs : 0,
         fat: typeof data.fat === 'number' ? data.fat : 0,
-        initialPortion: 'Normal',
         manuallyAdded: true,
       };
       setItems(prev => [...prev, newItem]);
-      setPortions(prev => ({ ...prev, [newItem.id]: 'Normal' }));
-      setCustomGrams(prev => ({ ...prev, [newItem.id]: 100 }));
-      setDisplayUnits(prev => ({ ...prev, [newItem.id]: 'g' }));
-      setQuantityTexts(prev => ({ ...prev, [newItem.id]: '100' }));
+      setPortions(prev => ({ ...prev, [newItem.id]: 'medium' }));
       setAddModalVisible(false);
       setSearchQuery('');
     } catch {
-      setLookupError('Could not find item — try a different name.');
+      setLookupError('Could not find that food — try a different name.');
     } finally {
       setLookupLoading(false);
     }
@@ -288,21 +231,16 @@ export default function EstimateScreen({ navigation, route }: Props) {
       protein: menuItem.protein,
       carbs: menuItem.carbs,
       fat: menuItem.fat,
-      initialPortion: 'Normal',
       manuallyAdded: true,
     };
     setItems(prev => [...prev, newItem]);
-    setPortions(prev => ({ ...prev, [newItem.id]: 'Normal' }));
-    setCustomGrams(prev => ({ ...prev, [newItem.id]: 100 }));
-    setDisplayUnits(prev => ({ ...prev, [newItem.id]: 'g' }));
-    setQuantityTexts(prev => ({ ...prev, [newItem.id]: '100' }));
+    setPortions(prev => ({ ...prev, [newItem.id]: 'medium' }));
     setAddModalVisible(false);
     setSearchQuery('');
   }
 
   async function handleReanalyze() {
     if (!feedbackText.trim() || !imageBase64) return;
-    console.log('[reanalyze] starting, imageBase64 length:', imageBase64.length, 'server:', SERVER_URL);
     setReanalyzing(true);
     setReanalyzeError(null);
     try {
@@ -321,23 +259,13 @@ export default function EstimateScreen({ navigation, route }: Props) {
         throw new Error(`Server ${res.status}: ${errBody.error ?? 'unknown error'}`);
       }
       const newResult = await res.json() as AnalysisResult;
-      console.log('[reanalyze] success, items:', newResult.detectedItems?.length);
       const newItems = buildInitialItems(newResult, menuItems);
       setItems(newItems);
-      setPortions(Object.fromEntries(newItems.map(i => [i.id, i.initialPortion])));
-      setCustomGrams(Object.fromEntries(newItems.map(i => [i.id, i.estimatedQuantityGrams ?? 100])));
-      setDisplayUnits(Object.fromEntries(newItems.map(i => [i.id, getDefaultUnit(i.name)])));
-      setQuantityTexts(Object.fromEntries(newItems.map(i => {
-        const unit = getDefaultUnit(i.name);
-        const g = i.estimatedQuantityGrams ?? 100;
-        return [i.id, String(round1(g / gramsPerUnit(unit, i.name, g)))];
-      })));
-      setUnitPickerOpen(null);
+      setPortions(Object.fromEntries(newItems.map(i => [i.id, 'medium' as VisualPortion])));
       setFeedbackText('');
       setHasReanalyzed(true);
     } catch (err) {
-      console.error('[reanalyze] error:', err);
-      setReanalyzeError(err instanceof Error ? err.message : 'Re-evaluate failed — check your connection.');
+      setReanalyzeError(err instanceof Error ? err.message : 'Re-evaluate failed.');
     } finally {
       setReanalyzing(false);
     }
@@ -346,9 +274,9 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const totals = useMemo(() =>
     items.reduce(
       (acc, item) => {
-        const s = getScaled(item, getPortionFor(item.id), customGrams[item.id]);
+        const s = getScaled(item, getPortionFor(item.id));
         return {
-          cal:     round1(acc.cal     + s.cal),
+          cal:     Math.round(acc.cal     + s.cal),
           protein: round1(acc.protein + s.protein),
           carbs:   round1(acc.carbs   + s.carbs),
           fat:     round1(acc.fat     + s.fat),
@@ -357,14 +285,14 @@ export default function EstimateScreen({ navigation, route }: Props) {
       { cal: 0, protein: 0, carbs: 0, fat: 0 }
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, portions, customGrams]
+    [items, portions]
   );
 
   function handleLogMeal() {
     const mealItems: MacroItem[] = items.map(item => {
       const portion = getPortionFor(item.id);
-      const scaled = getScaled(item, portion, customGrams[item.id]);
-      return { name: item.name, portion, ...scaled };
+      const scaled = getScaled(item, portion);
+      return { name: item.name, portion: VISUAL_LABELS[portion].label, ...scaled };
     });
     addMeal({ id: String(Date.now()), timestamp: new Date().toLocaleString(), items: mealItems, totals });
     navigation.pop();
@@ -379,6 +307,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
   return (
     <>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+
         <View style={styles.headerRow}>
           <Text style={styles.header}>Meal Estimate</Text>
           {source === 'barcode' && (
@@ -388,7 +317,6 @@ export default function EstimateScreen({ navigation, route }: Props) {
           )}
         </View>
 
-        {/* Fix 2: image quality / low confidence error banner */}
         {imageQualityError && (
           <View style={styles.imageQualityBanner}>
             <Text style={styles.imageQualityText}>
@@ -412,25 +340,22 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
         {isFallback && (
           <View style={styles.fallbackCard}>
-            <Text style={styles.fallbackText}>Using default menu items — tap portions to adjust</Text>
+            <Text style={styles.fallbackText}>Using default menu items — tap a size to adjust</Text>
           </View>
         )}
 
         <Text style={styles.sectionLabel}>
-          {isFallback ? 'Menu Items' : 'Detected Items'}
+          {isFallback ? 'Menu Items' : 'What you ate'}
         </Text>
 
         {items.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>No items — add items manually</Text>
+            <Text style={styles.emptyText}>No items yet — add something below</Text>
           </View>
         ) : (
           items.map(item => {
             const portion = getPortionFor(item.id);
-            const baseG = customGrams[item.id] ?? item.estimatedQuantityGrams ?? 100;
-            const scaled = getScaled(item, portion, customGrams[item.id]);
-            const unit = displayUnits[item.id] ?? 'g';
-            const estG = item.estimatedQuantityGrams ?? 100;
+            const scaled = getScaled(item, portion);
             return (
               <Swipeable
                 key={item.id}
@@ -447,54 +372,31 @@ export default function EstimateScreen({ navigation, route }: Props) {
               >
                 <View style={styles.itemCard}>
                   <Text style={styles.itemName}>{item.name}</Text>
-                  {item.estimatedQuantityGrams != null && (
-                    <View>
-                      <View style={styles.quantityRow}>
-                        <TextInput
-                          style={styles.quantityInput}
-                          keyboardType="decimal-pad"
-                          value={quantityTexts[item.id] ?? String(estG)}
-                          onChangeText={text => {
-                            setQuantityTexts(prev => ({ ...prev, [item.id]: text }));
-                            const val = parseFloat(text);
-                            if (!isNaN(val) && val > 0) {
-                              setCustomGrams(prev => ({
-                                ...prev,
-                                [item.id]: Math.max(val * gramsPerUnit(unit, item.name, estG), 0.5),
-                              }));
-                            }
-                          }}
-                          onFocus={() => setUnitPickerOpen(null)}
-                        />
-                        <TouchableOpacity
-                          style={styles.unitBtn}
-                          onPress={() => setUnitPickerOpen(prev => prev === item.id ? null : item.id)}
-                        >
-                          <Text style={styles.unitBtnText}>{unit} ▾</Text>
-                        </TouchableOpacity>
-                      </View>
-                      {unitPickerOpen === item.id && (
-                        <View style={styles.unitOptions}>
-                          {ALL_UNITS.map(u => (
-                            <TouchableOpacity
-                              key={u}
-                              style={[styles.unitOption, unit === u && styles.unitOptionActive]}
-                              onPress={() => {
-                                const newText = String(round1(baseG / gramsPerUnit(u, item.name, estG)));
-                                setQuantityTexts(prev => ({ ...prev, [item.id]: newText }));
-                                setDisplayUnits(prev => ({ ...prev, [item.id]: u }));
-                                setUnitPickerOpen(null);
-                              }}
-                            >
-                              <Text style={[styles.unitOptionText, unit === u && styles.unitOptionTextActive]}>
-                                {u}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                  )}
+
+                  {/* Visual portion picker */}
+                  <View style={styles.visualPortionRow}>
+                    {VISUAL_PORTIONS.map(vp => (
+                      <TouchableOpacity
+                        key={vp}
+                        style={[styles.vpBtn, portion === vp && styles.vpBtnActive]}
+                        onPress={() => setPortions(prev => ({ ...prev, [item.id]: vp }))}
+                      >
+                        <Text style={styles.vpEmoji}>{VISUAL_LABELS[vp].emoji}</Text>
+                        <Text style={[styles.vpLabel, portion === vp && styles.vpLabelActive]}>
+                          {VISUAL_LABELS[vp].label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Calories — prominent */}
+                  <Text style={styles.itemCalories}>{scaled.cal} cal</Text>
+
+                  {/* Macros — secondary */}
+                  <Text style={styles.itemMacros}>
+                    {scaled.protein}g protein · {scaled.carbs}g carbs · {scaled.fat}g fat
+                  </Text>
+
                   {!item.manuallyAdded && item.confidence !== undefined && (
                     <View style={styles.confidenceRow}>
                       <View style={styles.confidenceBarTrack}>
@@ -504,47 +406,24 @@ export default function EstimateScreen({ navigation, route }: Props) {
                           item.confidence < 0.6 && styles.confidenceBarLow,
                         ]} />
                       </View>
-                      <Text style={[
-                        styles.confidenceText,
-                        item.confidence < 0.6 && styles.confidenceLow,
-                      ]}>
-                        {Math.round(item.confidence * 100)}% confident
+                      <Text style={[styles.confidenceText, item.confidence < 0.6 && styles.confidenceLow]}>
+                        {Math.round(item.confidence * 100)}% sure
                       </Text>
                     </View>
                   )}
-                  <View style={styles.portionRow}>
-                    {PORTIONS.map(p => (
-                      <TouchableOpacity
-                        key={p}
-                        style={[styles.portionBtn, portion === p && styles.portionBtnActive]}
-                        onPress={() => setPortions(prev => ({ ...prev, [item.id]: p }))}
-                      >
-                        <Text style={[styles.portionBtnText, portion === p && styles.portionBtnTextActive]}>
-                          {p}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  <View style={styles.macroRow}>
-                    <Text style={styles.macroText}>{scaled.cal} cal</Text>
-                    <Text style={styles.macroText}>{scaled.protein}g protein</Text>
-                    <Text style={styles.macroText}>{scaled.carbs}g carbs</Text>
-                    <Text style={styles.macroText}>{scaled.fat}g fat</Text>
-                  </View>
                 </View>
               </Swipeable>
             );
           })
         )}
 
-        {/* AI feedback / re-evaluate row — only shown when we have an image to reanalyze */}
         {imageBase64 && (
           <View style={styles.feedbackSection}>
-            <Text style={styles.feedbackLabel}>Correct the AI</Text>
+            <Text style={styles.feedbackLabel}>Something wrong?</Text>
             <View style={styles.feedbackRow}>
               <TextInput
                 style={styles.feedbackInput}
-                placeholder="Tell the AI what's wrong… (e.g. 'those are bananas not rice')"
+                placeholder="Tell the AI what's wrong…"
                 placeholderTextColor="#555"
                 value={feedbackText}
                 onChangeText={text => { setFeedbackText(text); setReanalyzeError(null); }}
@@ -568,35 +447,34 @@ export default function EstimateScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        <TouchableOpacity style={styles.addItemBtn} onPress={openAddModal}>
+        <TouchableOpacity style={styles.addItemBtn} onPress={() => {
+          setSearchQuery('');
+          setLookupError(null);
+          setAddModalVisible(true);
+        }}>
           <Text style={styles.addItemBtnText}>+ Add item</Text>
         </TouchableOpacity>
 
+        {/* Totals card with traffic lights */}
         <View style={styles.totalsCard}>
-          <Text style={styles.totalsTitle}>Meal Totals</Text>
-          <View style={styles.totalsRow}>
-            <View style={styles.totalItem}>
-              <Text style={styles.totalValue}>{totals.cal}</Text>
-              <Text style={styles.totalLabel}>cal</Text>
+          <Text style={styles.totalsTitle}>This meal</Text>
+          <Text style={styles.totalCalories}>{totals.cal} calories</Text>
+          <Text style={styles.totalMacros}>
+            {totals.protein}g protein · {totals.carbs}g carbs · {totals.fat}g fat
+          </Text>
+          {items.length > 0 && (
+            <View style={styles.trafficRow}>
+              <Text style={styles.trafficItem}>{proteinSignal(totals.protein)} Protein</Text>
+              <Text style={styles.trafficItem}>{carbSignal(totals.carbs)} Carbs</Text>
+              <Text style={styles.trafficItem}>{fatSignal(totals.fat)} Fat</Text>
             </View>
-            <View style={styles.totalItem}>
-              <Text style={styles.totalValue}>{totals.protein}g</Text>
-              <Text style={styles.totalLabel}>protein</Text>
-            </View>
-            <View style={styles.totalItem}>
-              <Text style={styles.totalValue}>{totals.carbs}g</Text>
-              <Text style={styles.totalLabel}>carbs</Text>
-            </View>
-            <View style={styles.totalItem}>
-              <Text style={styles.totalValue}>{totals.fat}g</Text>
-              <Text style={styles.totalLabel}>fat</Text>
-            </View>
-          </View>
+          )}
         </View>
 
         <TouchableOpacity style={styles.button} onPress={handleLogMeal}>
           <Text style={styles.buttonText}>Log Meal</Text>
         </TouchableOpacity>
+
       </ScrollView>
 
       <Modal
@@ -619,7 +497,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
           <View style={styles.searchRow}>
             <TextInput
               style={styles.searchInput}
-              placeholder={isDiningHallMode ? 'Filter menu items…' : 'Search food…'}
+              placeholder={isDiningHallMode ? 'Filter menu items…' : 'What food do you want to add?'}
               placeholderTextColor="#999"
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -652,7 +530,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.menuItemRow} onPress={() => handleAddMenuItemTap(item)}>
                   <Text style={styles.menuItemName}>{item.name}</Text>
-                  <Text style={styles.menuItemMacros}>{item.calories} cal</Text>
+                  <Text style={styles.menuItemCal}>{item.calories} cal</Text>
                 </TouchableOpacity>
               )}
               keyboardShouldPersistTaps="handled"
@@ -668,6 +546,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F0F0F' },
   content: { padding: 20, paddingBottom: 40 },
+
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, marginTop: 8 },
   header: { fontSize: 22, fontWeight: '800', color: '#FFFFFF' },
   barcodeBadge: {
@@ -680,21 +559,12 @@ const styles = StyleSheet.create({
   headerBackText: { color: '#FFFFFF', fontSize: 16 },
 
   imageQualityBanner: {
-    backgroundColor: '#2A1500',
-    borderWidth: 1,
-    borderColor: '#FF9500',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    backgroundColor: '#2A1500', borderWidth: 1, borderColor: '#FF9500',
+    borderRadius: 12, padding: 14, marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
   },
   imageQualityText: { flex: 1, fontSize: 14, color: '#FF9500', fontWeight: '500' },
-  retakeBtn: {
-    backgroundColor: '#FF9500', borderRadius: 8,
-    paddingVertical: 8, paddingHorizontal: 14,
-  },
+  retakeBtn: { backgroundColor: '#FF9500', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14 },
   retakeBtnText: { color: '#0F0F0F', fontWeight: '700', fontSize: 13 },
 
   venueCard: {
@@ -715,57 +585,39 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
   },
 
+  // Item card
   itemCard: {
-    backgroundColor: '#1A1A1A', borderRadius: 12, padding: 12, marginBottom: 12,
+    backgroundColor: '#1A1A1A', borderRadius: 12, padding: 14, marginBottom: 12,
     borderWidth: 1, borderColor: '#2A2A2A',
   },
-  itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 6 },
+  itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 10 },
 
-  quantityRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  quantityInput: {
-    width: 72, backgroundColor: '#2A2A2A', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 5,
-    fontSize: 14, color: '#FFFFFF', textAlign: 'right',
+  // Visual portion picker
+  visualPortionRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+  vpBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: 8,
+    borderRadius: 10, backgroundColor: '#2A2A2A',
   },
-  unitBtn: { backgroundColor: '#2A2A2A', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  unitBtnText: { fontSize: 13, fontWeight: '600', color: '#00E5A0' },
-  unitOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
-  unitOption: { backgroundColor: '#2A2A2A', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5 },
-  unitOptionActive: { backgroundColor: '#00E5A0' },
-  unitOptionText: { fontSize: 12, color: '#8A8A8A' },
-  unitOptionTextActive: { color: '#0F0F0F', fontWeight: '700' },
+  vpBtnActive: { backgroundColor: '#00E5A0' },
+  vpEmoji: { fontSize: 18, marginBottom: 2 },
+  vpLabel: { fontSize: 10, fontWeight: '600', color: '#8A8A8A' },
+  vpLabelActive: { color: '#0F0F0F' },
 
-  confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  confidenceBarTrack: {
-    width: 60, height: 4, backgroundColor: '#2A2A2A', borderRadius: 2, overflow: 'hidden',
-  },
+  // Calories + macros display
+  itemCalories: { fontSize: 28, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
+  itemMacros: { fontSize: 13, color: '#8A8A8A' },
+
+  // Confidence
+  confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  confidenceBarTrack: { width: 60, height: 4, backgroundColor: '#2A2A2A', borderRadius: 2, overflow: 'hidden' },
   confidenceBarFill: { height: 4, backgroundColor: '#00E5A0', borderRadius: 2 },
   confidenceBarLow: { backgroundColor: '#FF9500' },
-  confidenceText: { fontSize: 12, color: '#8A8A8A' },
+  confidenceText: { fontSize: 11, color: '#555' },
   confidenceLow: { color: '#FF9500' },
 
-  portionRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  portionBtn: {
-    flex: 1, paddingVertical: 8, borderRadius: 8,
-    backgroundColor: '#2A2A2A', alignItems: 'center',
-  },
-  portionBtnActive: { backgroundColor: '#00E5A0' },
-  portionBtnText: { fontSize: 13, fontWeight: '600', color: '#8A8A8A' },
-  portionBtnTextActive: { color: '#0F0F0F' },
-
-  macroRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  macroText: {
-    fontSize: 12, color: '#8A8A8A', backgroundColor: '#2A2A2A',
-    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
-  },
-
   removeAction: {
-    backgroundColor: '#FF4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 90,
-    borderRadius: 12,
-    marginBottom: 12,
+    backgroundColor: '#FF4444', justifyContent: 'center', alignItems: 'center',
+    width: 90, borderRadius: 12, marginBottom: 12,
   },
   removeActionText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
@@ -775,10 +627,8 @@ const styles = StyleSheet.create({
   },
   emptyText: { fontSize: 14, color: '#8A8A8A', fontStyle: 'italic' },
 
-  // Feedback / re-evaluate
-  feedbackSection: {
-    marginBottom: 16,
-  },
+  // Feedback
+  feedbackSection: { marginBottom: 16 },
   feedbackLabel: {
     fontSize: 12, fontWeight: '600', color: '#8A8A8A',
     textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8,
@@ -799,27 +649,25 @@ const styles = StyleSheet.create({
 
   addItemBtn: {
     borderRadius: 10, paddingVertical: 12, alignItems: 'center',
-    marginBottom: 16, borderWidth: 1, borderColor: '#2A2A2A',
-    backgroundColor: '#1A1A1A',
+    marginBottom: 16, borderWidth: 1, borderColor: '#2A2A2A', backgroundColor: '#1A1A1A',
   },
   addItemBtnText: { fontSize: 15, fontWeight: '600', color: '#00E5A0' },
 
+  // Totals card
   totalsCard: {
     backgroundColor: '#1A1A1A', borderRadius: 14, padding: 20,
-    marginTop: 4, marginBottom: 20, borderWidth: 1, borderColor: '#2A2A2A',
+    marginBottom: 20, borderWidth: 1, borderColor: '#2A2A2A',
   },
   totalsTitle: {
-    color: '#8A8A8A', fontSize: 12, fontWeight: '700',
-    marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1,
+    fontSize: 12, fontWeight: '700', color: '#8A8A8A',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8,
   },
-  totalsRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  totalItem: { alignItems: 'center' },
-  totalValue: { color: '#FFFFFF', fontSize: 22, fontWeight: '800' },
-  totalLabel: { color: '#8A8A8A', fontSize: 12, fontWeight: '500', marginTop: 2 },
+  totalCalories: { fontSize: 36, fontWeight: '900', color: '#FFFFFF', marginBottom: 6 },
+  totalMacros: { fontSize: 14, color: '#8A8A8A', marginBottom: 14 },
+  trafficRow: { flexDirection: 'row', gap: 14 },
+  trafficItem: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
 
-  button: {
-    backgroundColor: '#00E5A0', borderRadius: 14, paddingVertical: 16, alignItems: 'center',
-  },
+  button: { backgroundColor: '#00E5A0', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   buttonText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
 
   // Modal
@@ -844,10 +692,7 @@ const styles = StyleSheet.create({
   },
   searchBtnDisabled: { opacity: 0.5 },
   searchBtnText: { color: '#0F0F0F', fontWeight: '700', fontSize: 15 },
-
-  lookupError: {
-    color: '#FF4444', fontSize: 13, paddingHorizontal: 16, marginBottom: 8,
-  },
+  lookupError: { color: '#FF4444', fontSize: 13, paddingHorizontal: 16, marginBottom: 8 },
 
   menuItemRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -855,5 +700,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: '#2A2A2A',
   },
   menuItemName: { fontSize: 15, color: '#FFFFFF', flex: 1 },
-  menuItemMacros: { fontSize: 13, color: '#8A8A8A' },
+  menuItemCal: { fontSize: 13, color: '#8A8A8A' },
 });

@@ -1,55 +1,60 @@
 import * as Location from 'expo-location';
+import { CAMPUS_REGISTRY, SUPPORTED_DINING_VENUES } from '../data/campuses';
+import type { Coords, DiningProvider } from '../data/campuses';
 
 export type Venue = {
   id: string;
   name: string;
+  campusId?: string;
   institution: string;
   type: 'dining_hall' | 'restaurant';
   locationId: string;
-  provider: 'dineoncampus' | 'generic';
-  coords: { lat: number; lon: number };
+  provider: DiningProvider | 'generic';
+  coords: Coords;
   // Pre-fetched menu items for restaurant venues (chain lookup or scrape result)
   menuItems?: Array<{ id: string; name: string; calories: number; protein: number; carbs: number; fat: number }>;
 };
 
-const RADIUS_KM = 0.25;
+const DINING_HALL_RADIUS_KM = 0.25;
 
-export const KNOWN_VENUES: Venue[] = [
-  {
-    id: 'duncan-tamu',
-    name: 'Duncan Dining Hall',
-    institution: 'Texas A&M University',
-    type: 'dining_hall',
-    locationId: '5878eb5cee596f847636f114',
-    provider: 'dineoncampus',
-    coords: { lat: 30.6120718, lon: -96.3355046 },
-  },
-  {
-    id: 'sbisa-tamu',
-    name: 'Sbisa Dining Hall',
-    institution: 'Texas A&M University',
-    type: 'dining_hall',
-    locationId: '587909deee596f31cedc179c',
-    provider: 'dineoncampus',
-    coords: { lat: 30.6171351, lon: -96.3437766 },
-  },
-  {
-    id: 'commons-tamu',
-    name: 'The Commons Dining Hall',
-    institution: 'Texas A&M University',
-    type: 'dining_hall',
-    locationId: '59972586ee596fe55d2eef75',
-    provider: 'dineoncampus',
-    coords: { lat: 30.6154596, lon: -96.3360751 },
-  },
-];
+export const KNOWN_VENUES: Venue[] = SUPPORTED_DINING_VENUES;
 
-function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+function haversineKm(a: Coords, b: Coords): number {
   const R = 6371;
   const dLat = (b.lat - a.lat) * Math.PI / 180;
   const dLon = (b.lon - a.lon) * Math.PI / 180;
   const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function findNearestCampus(coords: Coords) {
+  let nearest = null as { id: string; distanceKm: number } | null;
+  for (const campus of CAMPUS_REGISTRY) {
+    const distanceKm = haversineKm(coords, campus.coords);
+    if (distanceKm <= campus.detectionRadiusKm && (!nearest || distanceKm < nearest.distanceKm)) {
+      nearest = { id: campus.id, distanceKm };
+    }
+  }
+  return nearest;
+}
+
+function findNearestDiningHall(coords: Coords): { venue: Venue | null; distanceKm: number } {
+  const nearestCampus = findNearestCampus(coords);
+  const candidates = nearestCampus
+    ? SUPPORTED_DINING_VENUES.filter(venue => venue.campusId === nearestCampus.id)
+    : SUPPORTED_DINING_VENUES;
+
+  let nearestHall: Venue | null = null;
+  let nearestHallDist = Infinity;
+  for (const venue of candidates) {
+    const dist = haversineKm(coords, venue.coords);
+    if (dist <= DINING_HALL_RADIUS_KM && dist < nearestHallDist) {
+      nearestHall = venue;
+      nearestHallDist = dist;
+    }
+  }
+
+  return { venue: nearestHall, distanceKm: nearestHallDist };
 }
 
 export async function detectVenue(): Promise<Venue | null> {
@@ -60,22 +65,13 @@ export async function detectVenue(): Promise<Venue | null> {
   const { latitude: lat, longitude: lon } = location.coords;
   const userCoords = { lat, lon };
 
-  // Find nearest campus dining hall within RADIUS_KM
-  let nearestHall: Venue | null = null;
-  let nearestHallDist = Infinity;
-  for (const venue of KNOWN_VENUES) {
-    const dist = haversineKm(userCoords, venue.coords);
-    if (dist <= RADIUS_KM && dist < nearestHallDist) {
-      nearestHall = venue;
-      nearestHallDist = dist;
-    }
-  }
+  const nearestHall = findNearestDiningHall(userCoords);
 
   // Check for a nearby restaurant via Google Places (requires GOOGLE_PLACES_API_KEY on server)
   try {
     const { detectNearbyRestaurant } = await import('./restaurantService');
     const restaurant = await detectNearbyRestaurant(userCoords);
-    if (restaurant && restaurant.distance_km <= 0.1 && restaurant.distance_km < nearestHallDist) {
+    if (restaurant && restaurant.distance_km <= 0.1 && restaurant.distance_km < nearestHall.distanceKm) {
       return {
         id: restaurant.id,
         name: restaurant.name,
@@ -91,5 +87,5 @@ export async function detectVenue(): Promise<Venue | null> {
     // continue with dining hall result
   }
 
-  return nearestHall;
+  return nearestHall.venue;
 }

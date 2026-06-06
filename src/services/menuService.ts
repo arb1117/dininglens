@@ -1,4 +1,8 @@
+import { SUPPORTED_DINING_VENUES } from '../data/campuses';
+import type { DiningProvider } from '../data/campuses';
+
 const BASE_URL = 'https://apiv4.dineoncampus.com';
+const CS50_BASE_URL = 'https://api.cs50.io/dining';
 
 export type MenuItem = {
   id: string;
@@ -10,11 +14,11 @@ export type MenuItem = {
 };
 
 /** Map of venue names → dineoncampus location IDs. Add new schools here. */
-export const KNOWN_LOCATIONS: Record<string, string> = {
-  'Duncan Dining Hall':      '5878eb5cee596f847636f114',
-  'Sbisa Dining Hall':       '587909deee596f31cedc179c',
-  'The Commons Dining Hall': '59972586ee596fe55d2eef75',
-};
+export const KNOWN_LOCATIONS: Record<string, string> = Object.fromEntries(
+  SUPPORTED_DINING_VENUES
+    .filter(venue => venue.provider === 'dineoncampus')
+    .map(venue => [venue.name, venue.locationId])
+);
 
 export const FAKE_MENU: MenuItem[] = [
   { id: 'fake-1', name: 'Grilled Chicken Breast', calories: 165, protein: 31, carbs: 0,  fat: 3.6 },
@@ -30,6 +34,14 @@ function getCurrentPeriod(): { slug: string; label: string } {
   if (mins < 10 * 60 + 30) return { slug: 'breakfast', label: 'Breakfast' };
   if (mins < 15 * 60)       return { slug: 'lunch',     label: 'Lunch'     };
   return                              { slug: 'dinner',   label: 'Dinner'    };
+}
+
+function getCurrentCs50Meal(): { mealId: number; label: string } {
+  const now = new Date();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (mins < 10 * 60 + 30) return { mealId: 0, label: 'Breakfast' };
+  if (mins < 15 * 60) return { mealId: 1, label: 'Lunch' };
+  return { mealId: 2, label: 'Dinner' };
 }
 
 function parseNutrient(nutrients: any[], name: string): number {
@@ -62,6 +74,12 @@ function parseItems(data: any): MenuItem[] {
     }
   }
   return items;
+}
+
+function parseGramAmount(value: any): number {
+  if (!value?.amount) return 0;
+  const n = parseFloat(String(value.amount).replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? n : 0;
 }
 
 /**
@@ -101,6 +119,70 @@ export async function fetchMenu(
 
     const menuData = await menuRes.json();
     const items = parseItems(menuData);
+
+    return { items: items.length > 0 ? items : FAKE_MENU, periodLabel };
+  } catch {
+    return { items: FAKE_MENU, periodLabel };
+  }
+}
+
+export async function fetchVenueMenu(
+  venue: { provider: DiningProvider | 'generic'; locationId: string },
+  date: string
+): Promise<{ items: MenuItem[]; periodLabel: string }> {
+  if (venue.provider === 'dineoncampus') {
+    return fetchMenu(venue.locationId, date);
+  }
+
+  if (venue.provider === 'cs50') {
+    return fetchCs50Menu(venue.locationId, date);
+  }
+
+  return { items: FAKE_MENU, periodLabel: 'Menu' };
+}
+
+async function fetchCs50Menu(
+  locationId: string,
+  date: string
+): Promise<{ items: MenuItem[]; periodLabel: string }> {
+  const { mealId, label: periodLabel } = getCurrentCs50Meal();
+
+  try {
+    const res = await fetch(
+      `${CS50_BASE_URL}/menus?date=${date}&location=${encodeURIComponent(locationId)}&meal=${mealId}`,
+      { headers: { Accept: 'application/json' } }
+    );
+    if (!res.ok) throw new Error(`cs50 menus ${res.status}`);
+
+    const data = await res.json();
+    const recipeIds = [...new Set(
+      (Array.isArray(data) ? data : [])
+        .map((item: any) => item?.recipe)
+        .filter((id: any) => id != null)
+    )].slice(0, 40);
+
+    const recipes = await Promise.all(
+      recipeIds.map(async id => {
+        try {
+          const recipeRes = await fetch(`${CS50_BASE_URL}/recipes/${encodeURIComponent(String(id))}`);
+          if (!recipeRes.ok) return null;
+          return recipeRes.json();
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    const items: MenuItem[] = recipes
+      .filter((recipe: any) => recipe?.name)
+      .map((recipe: any) => ({
+        id: String(recipe.id),
+        name: recipe.name,
+        calories: Math.round(recipe.calories ?? 0),
+        protein: Math.round(parseGramAmount(recipe.protein) * 10) / 10,
+        carbs: Math.round(parseGramAmount(recipe.total_carb) * 10) / 10,
+        fat: Math.round(parseGramAmount(recipe.total_fat) * 10) / 10,
+      }));
 
     return { items: items.length > 0 ? items : FAKE_MENU, periodLabel };
   } catch {

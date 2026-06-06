@@ -13,7 +13,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { KNOWN_VENUES, detectVenue } from '../services/venueService';
-import { fetchMenu } from '../services/menuService';
+import { fetchVenueMenu } from '../services/menuService';
 import { analyzeImage } from '../services/visionService';
 import { useMealContext } from '../context/MealContext';
 
@@ -117,7 +117,7 @@ export default function CameraScreen({ navigation, route }: Props) {
     setDiningHallStatus('loading');
     try {
       const date = new Date().toISOString().split('T')[0];
-      const { items, periodLabel: label } = await fetchMenu(venueToLoad.locationId, date);
+      const { items, periodLabel: label } = await fetchVenueMenu(venueToLoad, date);
       setVenue(venueToLoad);
       setMenuItems(items);
       setPeriodLabel(label);

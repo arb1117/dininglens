@@ -176,6 +176,14 @@ export default function CameraScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
+        {/* Search button — bottom-left, above venue chip */}
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={() => navigation.navigate('Search')}
+        >
+          <Text style={styles.searchButtonText}>🔍</Text>
+        </TouchableOpacity>
+
         {/* Inactive venue chip — bottom-left */}
         {diningHallStatus === 'inactive' && (
           <TouchableOpacity
@@ -267,6 +275,20 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     backgroundColor: 'rgba(255,255,255,0.85)',
   },
+
+  // Search button — bottom-left, above venue chip
+  searchButton: {
+    position: 'absolute',
+    left: 20,
+    bottom: 155,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchButtonText: { fontSize: 22 },
 
   // Inactive venue chip — bottom-left
   venueChip: {

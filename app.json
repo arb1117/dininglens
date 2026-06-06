@@ -10,7 +10,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "DiningLens uses the camera to photograph meals and scan barcodes.",
-        "NSLocationWhenInUseUsageDescription": "DiningLens uses your location to detect nearby dining halls and restaurants for more accurate meal estimates."
+        "NSLocationWhenInUseUsageDescription": "DiningLens uses your location to detect nearby dining halls and restaurants for more accurate meal estimates.",
+        "NSPhotoLibraryUsageDescription": "DiningLens uses your photo library to analyze meals from your photos."
       }
     },
     "android": {
@@ -30,6 +31,12 @@
         "expo-camera",
         {
           "cameraPermission": "DiningLens uses the camera to photograph meals and scan barcodes."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DiningLens uses your photo library to analyze meals from your photos."
         }
       ],
       "expo-location"

@@ -9,6 +9,7 @@ import {
   Modal,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -87,9 +88,12 @@ export default function CameraScreen({ navigation, route }: Props) {
   }
 
   // Auto-enable dining hall mode when launched from Add sheet with 'dining' action
+  // Auto-launch gallery picker when opened in gallery mode
   useEffect(() => {
     if (route.params?.initialMode === 'dining') {
       enableDiningHallModeForVenue();
+    } else if (route.params?.initialMode === 'gallery') {
+      handleGalleryPick();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -195,6 +199,41 @@ export default function CameraScreen({ navigation, route }: Props) {
       setBarcodeError('Lookup failed — try again');
     } finally {
       setBarcodeScanning(false);
+    }
+  }
+
+  async function handleGalleryPick() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      setErrorBanner('Photo library access denied — enable in Settings');
+      if (route.params?.initialMode === 'gallery') navigation.goBack();
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      base64: true,
+      quality: 0.5,
+    });
+    if (result.canceled) {
+      if (route.params?.initialMode === 'gallery') navigation.goBack();
+      return;
+    }
+    const base64 = result.assets?.[0]?.base64;
+    if (!base64) {
+      setErrorBanner('Could not load photo');
+      if (route.params?.initialMode === 'gallery') navigation.goBack();
+      return;
+    }
+    setAnalyzing(true);
+    setErrorBanner(null);
+    try {
+      const analysisResult = await analyzeImage(base64, isDiningHallMode ? menuItems : undefined);
+      navigation.navigate('Estimate', { analysisResult, imageBase64: base64 });
+    } catch {
+      setErrorBanner('Analysis failed — using defaults');
+      navigation.navigate('Estimate', { analysisResult: undefined, imageBase64: base64 });
+    } finally {
+      setAnalyzing(false);
     }
   }
 
@@ -304,6 +343,17 @@ export default function CameraScreen({ navigation, route }: Props) {
         >
           <Text style={styles.barcodeButtonText}>📦</Text>
         </TouchableOpacity>
+
+        {/* Gallery picker — bottom-left, at shutter level */}
+        {scanMode === 'photo' && (
+          <TouchableOpacity
+            style={styles.galleryButton}
+            onPress={handleGalleryPick}
+            disabled={analyzing}
+          >
+            <Text style={styles.galleryButtonText}>🖼</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Shutter — centered, 80px from bottom (hidden in barcode mode) */}
         {scanMode === 'photo' && (
@@ -487,6 +537,20 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     backgroundColor: 'rgba(255,255,255,0.85)',
   },
+
+  // Gallery picker button — bottom-left at shutter level
+  galleryButton: {
+    position: 'absolute',
+    left: 20,
+    bottom: 90,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  galleryButtonText: { fontSize: 24 },
 
   // Search button — bottom-left, above venue chip
   searchButton: {

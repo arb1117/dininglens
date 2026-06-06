@@ -17,11 +17,12 @@ const AIChatScreen    = require('../screens/AIChatScreen').default;
 const Tab = createBottomTabNavigator<TabParamList>();
 
 const ACTION_ITEMS: { icon: string; label: string; action: string }[] = [
-  { icon: '📷', label: 'Scan Meal',    action: 'scan'    },
-  { icon: '🔍', label: 'Search Foods', action: 'search'  },
-  { icon: '📦', label: 'Scan Barcode', action: 'barcode' },
-  { icon: '🍽',  label: 'Dining Hall',  action: 'dining'  },
-  { icon: '🤖', label: 'Ask AI',       action: 'ai'      },
+  { icon: '📷', label: 'Scan Meal',     action: 'scan'    },
+  { icon: '🖼',  label: 'Upload Photo',  action: 'upload'  },
+  { icon: '🔍', label: 'Search Foods',  action: 'search'  },
+  { icon: '📦', label: 'Scan Barcode',  action: 'barcode' },
+  { icon: '🍽',  label: 'Dining Hall',   action: 'dining'  },
+  { icon: '🤖', label: 'Ask AI',        action: 'ai'      },
 ];
 
 function AddButton({ onPress }: { onPress: () => void }) {
@@ -48,6 +49,7 @@ export default function MainTabNavigator() {
     setTimeout(() => {
       switch (action) {
         case 'scan':    rootNav.navigate('Camera'); break;
+        case 'upload':  rootNav.navigate('Camera', { initialMode: 'gallery' }); break;
         case 'search':  rootNav.navigate('Search'); break;
         case 'barcode': rootNav.navigate('Camera', { initialMode: 'barcode' }); break;
         case 'dining':  rootNav.navigate('Camera', { initialMode: 'dining'  }); break;

@@ -30,7 +30,7 @@ export type RootStackParamList = {
   Onboarding:  undefined;
   Goals:       undefined;
   MainTabs:    NavigatorScreenParams<TabParamList> | undefined;
-  Camera:      { initialMode?: 'barcode' | 'dining' } | undefined;
+  Camera:      { initialMode?: 'barcode' | 'dining' | 'gallery' } | undefined;
   Estimate: {
     analysisResult?: AnalysisResult;
     imageBase64?: string;

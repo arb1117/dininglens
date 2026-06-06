@@ -1,9 +1,16 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import {
+  View, Text, TouchableOpacity, ScrollView, StyleSheet,
+  Modal, TextInput, ActivityIndicator, FlatList,
+  KeyboardAvoidingView, Platform,
+} from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem } from '../context/MealContext';
+import { MenuItem } from '../services/menuService';
+
+const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estimate'>;
 
@@ -35,6 +42,8 @@ type NormalizedItem = {
   carbs: number;
   fat: number;
   initialPortion: Portion;
+  confidence?: number;
+  manuallyAdded?: boolean;
 };
 
 function buildInitialItems(
@@ -68,6 +77,7 @@ function buildInitialItems(
           carbs: match.carbs,
           fat: match.fat,
           initialPortion: multiplierToPortion(detected.portionMultiplier),
+          confidence: detected.confidence,
         };
       })
       .filter((x): x is NormalizedItem => x !== null);
@@ -81,6 +91,7 @@ function buildInitialItems(
     carbs: item.carbs ?? 0,
     fat: item.fat ?? 0,
     initialPortion: multiplierToPortion(item.portionMultiplier),
+    confidence: item.confidence,
   }));
 }
 
@@ -99,6 +110,20 @@ export default function EstimateScreen({ navigation, route }: Props) {
   );
 
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
+
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  const isDiningHallMode = venue !== null;
+
+  const filteredMenuItems = useMemo(() =>
+    searchQuery.trim()
+      ? menuItems.filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      : menuItems,
+    [menuItems, searchQuery]
+  );
 
   function getPortionFor(id: string): Portion { return portions[id] ?? 'Normal'; }
 
@@ -120,6 +145,62 @@ export default function EstimateScreen({ navigation, route }: Props) {
       delete next[id];
       return next;
     });
+  }
+
+  function openAddModal() {
+    setSearchQuery('');
+    setLookupError(null);
+    setAddModalVisible(true);
+  }
+
+  async function handleLookup() {
+    if (!searchQuery.trim()) return;
+    setLookupLoading(true);
+    setLookupError(null);
+    try {
+      const res = await fetch(`${SERVER_URL}/lookup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchQuery.trim() }),
+      });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+      const newItem: NormalizedItem = {
+        id: `manual-${Date.now()}`,
+        name: data.name ?? searchQuery.trim(),
+        cal: typeof data.calories === 'number' ? data.calories : 0,
+        protein: typeof data.protein === 'number' ? data.protein : 0,
+        carbs: typeof data.carbs === 'number' ? data.carbs : 0,
+        fat: typeof data.fat === 'number' ? data.fat : 0,
+        initialPortion: 'Normal',
+        manuallyAdded: true,
+      };
+      setItems(prev => [...prev, newItem]);
+      setPortions(prev => ({ ...prev, [newItem.id]: 'Normal' }));
+      setAddModalVisible(false);
+      setSearchQuery('');
+    } catch {
+      setLookupError('Could not find item — try a different name.');
+    } finally {
+      setLookupLoading(false);
+    }
+  }
+
+  function handleAddMenuItemTap(menuItem: MenuItem) {
+    const newItem: NormalizedItem = {
+      id: `manual-${Date.now()}`,
+      name: menuItem.name,
+      cal: menuItem.calories,
+      protein: menuItem.protein,
+      carbs: menuItem.carbs,
+      fat: menuItem.fat,
+      initialPortion: 'Normal',
+      manuallyAdded: true,
+    };
+    setItems(prev => [...prev, newItem]);
+    setPortions(prev => ({ ...prev, [newItem.id]: 'Normal' }));
+    setAddModalVisible(false);
+    setSearchQuery('');
   }
 
   const totals = useMemo(() =>
@@ -152,142 +233,233 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const isFallback = !analysisResult || analysisResult.detectedItems.length === 0;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.header}>Meal Estimate</Text>
+    <>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <Text style={styles.header}>Meal Estimate</Text>
 
-      {/* Venue context card */}
-      {venue && !isFallback && (
-        <View style={styles.venueCard}>
-          <Text style={styles.venueCardText}>
-            {'✓ Matched to '}
-            <Text style={styles.venueCardName}>{venue.name}</Text>
-            {' menu'}
-          </Text>
+        {venue && !isFallback && (
+          <View style={styles.venueCard}>
+            <Text style={styles.venueCardText}>
+              {'✓ Matched to '}
+              <Text style={styles.venueCardName}>{venue.name}</Text>
+              {' menu'}
+            </Text>
+          </View>
+        )}
+
+        {isFallback && (
+          <View style={styles.fallbackCard}>
+            <Text style={styles.fallbackText}>Using default menu items — tap portions to adjust</Text>
+          </View>
+        )}
+
+        <Text style={styles.sectionLabel}>
+          {isFallback ? 'Menu Items' : 'Detected Items'}
+        </Text>
+
+        {items.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No items — add items manually</Text>
+          </View>
+        ) : (
+          items.map(item => {
+            const portion = getPortionFor(item.id);
+            const scaled = getScaled(item, portion);
+            return (
+              <Swipeable
+                key={item.id}
+                ref={ref => { swipeableRefs.current[item.id] = ref; }}
+                renderRightActions={() => (
+                  <TouchableOpacity
+                    style={styles.removeAction}
+                    onPress={() => removeItem(item.id)}
+                  >
+                    <Text style={styles.removeActionText}>Remove</Text>
+                  </TouchableOpacity>
+                )}
+                onSwipeableOpen={() => removeItem(item.id)}
+              >
+                <View style={styles.itemCard}>
+                  <Text style={styles.itemName}>{item.name}</Text>
+                  {!item.manuallyAdded && item.confidence !== undefined && (
+                    <Text style={[
+                      styles.confidenceText,
+                      item.confidence < 0.6 && styles.confidenceLow,
+                    ]}>
+                      {Math.round(item.confidence * 100)}% confident
+                    </Text>
+                  )}
+                  <View style={styles.portionRow}>
+                    {PORTIONS.map(p => (
+                      <TouchableOpacity
+                        key={p}
+                        style={[styles.portionBtn, portion === p && styles.portionBtnActive]}
+                        onPress={() => setPortions(prev => ({ ...prev, [item.id]: p }))}
+                      >
+                        <Text style={[styles.portionBtnText, portion === p && styles.portionBtnTextActive]}>
+                          {p}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <View style={styles.macroRow}>
+                    <Text style={styles.macroText}>{scaled.cal} cal</Text>
+                    <Text style={styles.macroText}>{scaled.protein}g protein</Text>
+                    <Text style={styles.macroText}>{scaled.carbs}g carbs</Text>
+                    <Text style={styles.macroText}>{scaled.fat}g fat</Text>
+                  </View>
+                </View>
+              </Swipeable>
+            );
+          })
+        )}
+
+        <TouchableOpacity style={styles.addItemBtn} onPress={openAddModal}>
+          <Text style={styles.addItemBtnText}>+ Add item</Text>
+        </TouchableOpacity>
+
+        <View style={styles.totalsCard}>
+          <Text style={styles.totalsTitle}>Meal Totals</Text>
+          <View style={styles.totalsRow}>
+            <View style={styles.totalItem}>
+              <Text style={styles.totalValue}>{totals.cal}</Text>
+              <Text style={styles.totalLabel}>cal</Text>
+            </View>
+            <View style={styles.totalItem}>
+              <Text style={styles.totalValue}>{totals.protein}g</Text>
+              <Text style={styles.totalLabel}>protein</Text>
+            </View>
+            <View style={styles.totalItem}>
+              <Text style={styles.totalValue}>{totals.carbs}g</Text>
+              <Text style={styles.totalLabel}>carbs</Text>
+            </View>
+            <View style={styles.totalItem}>
+              <Text style={styles.totalValue}>{totals.fat}g</Text>
+              <Text style={styles.totalLabel}>fat</Text>
+            </View>
+          </View>
         </View>
-      )}
 
-      {/* Fallback notice */}
-      {isFallback && (
-        <View style={styles.fallbackCard}>
-          <Text style={styles.fallbackText}>Using default menu items — tap portions to adjust</Text>
-        </View>
-      )}
+        <TouchableOpacity style={styles.button} onPress={handleLogMeal}>
+          <Text style={styles.buttonText}>Log Meal</Text>
+        </TouchableOpacity>
+      </ScrollView>
 
-      <Text style={styles.sectionLabel}>
-        {isFallback ? 'Menu Items' : 'Detected Items'}
-      </Text>
+      <Modal
+        visible={addModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setAddModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Add Item</Text>
+            <TouchableOpacity onPress={() => setAddModalVisible(false)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
 
-      {items.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>No items — add items manually</Text>
-        </View>
-      ) : (
-        items.map(item => {
-          const portion = getPortionFor(item.id);
-          const scaled = getScaled(item, portion);
-          return (
-            <Swipeable
-              key={item.id}
-              ref={ref => { swipeableRefs.current[item.id] = ref; }}
-              renderRightActions={() => (
-                <TouchableOpacity
-                  style={styles.removeAction}
-                  onPress={() => removeItem(item.id)}
-                >
-                  <Text style={styles.removeActionText}>Remove</Text>
+          <View style={styles.searchRow}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder={isDiningHallMode ? 'Filter menu items…' : 'Search food…'}
+              placeholderTextColor="#999"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType={isDiningHallMode ? 'search' : 'search'}
+              onSubmitEditing={isDiningHallMode ? undefined : handleLookup}
+              autoFocus
+            />
+            {!isDiningHallMode && (
+              <TouchableOpacity
+                style={[styles.searchBtn, lookupLoading && styles.searchBtnDisabled]}
+                onPress={handleLookup}
+                disabled={lookupLoading}
+              >
+                {lookupLoading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.searchBtnText}>Search</Text>
+                }
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {lookupError !== null && (
+            <Text style={styles.lookupError}>{lookupError}</Text>
+          )}
+
+          {isDiningHallMode && (
+            <FlatList
+              data={filteredMenuItems}
+              keyExtractor={m => m.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.menuItemRow} onPress={() => handleAddMenuItemTap(item)}>
+                  <Text style={styles.menuItemName}>{item.name}</Text>
+                  <Text style={styles.menuItemMacros}>{item.calories} cal</Text>
                 </TouchableOpacity>
               )}
-              onSwipeableOpen={() => removeItem(item.id)}
-            >
-              <View style={styles.itemCard}>
-                <Text style={styles.itemName}>{item.name}</Text>
-                <View style={styles.portionRow}>
-                  {PORTIONS.map(p => (
-                    <TouchableOpacity
-                      key={p}
-                      style={[styles.portionBtn, portion === p && styles.portionBtnActive]}
-                      onPress={() => setPortions(prev => ({ ...prev, [item.id]: p }))}
-                    >
-                      <Text style={[styles.portionBtnText, portion === p && styles.portionBtnTextActive]}>
-                        {p}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <View style={styles.macroRow}>
-                  <Text style={styles.macroText}>{scaled.cal} cal</Text>
-                  <Text style={styles.macroText}>{scaled.protein}g protein</Text>
-                  <Text style={styles.macroText}>{scaled.carbs}g carbs</Text>
-                  <Text style={styles.macroText}>{scaled.fat}g fat</Text>
-                </View>
-              </View>
-            </Swipeable>
-          );
-        })
-      )}
-
-      <View style={styles.totalsCard}>
-        <Text style={styles.totalsTitle}>Meal Totals</Text>
-        <View style={styles.totalsRow}>
-          <View style={styles.totalItem}>
-            <Text style={styles.totalValue}>{totals.cal}</Text>
-            <Text style={styles.totalLabel}>cal</Text>
-          </View>
-          <View style={styles.totalItem}>
-            <Text style={styles.totalValue}>{totals.protein}g</Text>
-            <Text style={styles.totalLabel}>protein</Text>
-          </View>
-          <View style={styles.totalItem}>
-            <Text style={styles.totalValue}>{totals.carbs}g</Text>
-            <Text style={styles.totalLabel}>carbs</Text>
-          </View>
-          <View style={styles.totalItem}>
-            <Text style={styles.totalValue}>{totals.fat}g</Text>
-            <Text style={styles.totalLabel}>fat</Text>
-          </View>
-        </View>
-      </View>
-
-      <TouchableOpacity style={styles.button} onPress={handleLogMeal}>
-        <Text style={styles.buttonText}>Log Meal</Text>
-      </TouchableOpacity>
-    </ScrollView>
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 40 }}
+            />
+          )}
+        </KeyboardAvoidingView>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#0F0F0F' },
   content: { padding: 20, paddingBottom: 40 },
-  header: { fontSize: 22, fontWeight: '800', color: '#500000', marginBottom: 12, marginTop: 8 },
+  header: { fontSize: 22, fontWeight: '800', color: '#FFFFFF', marginBottom: 12, marginTop: 8 },
+
   venueCard: {
-    backgroundColor: '#edf7ed', borderRadius: 10, paddingVertical: 10,
-    paddingHorizontal: 14, marginBottom: 16,
+    backgroundColor: '#1A1A1A', borderRadius: 10, paddingVertical: 10,
+    paddingHorizontal: 14, marginBottom: 16, borderWidth: 1, borderColor: '#2A2A2A',
   },
-  venueCardText: { fontSize: 13, color: '#333' },
-  venueCardName: { fontWeight: '700', color: '#2e7d32' },
+  venueCardText: { fontSize: 13, color: '#8A8A8A' },
+  venueCardName: { fontWeight: '700', color: '#00E5A0' },
+
   fallbackCard: {
-    backgroundColor: '#fff8e1', borderRadius: 10, paddingVertical: 10,
-    paddingHorizontal: 14, marginBottom: 16,
+    backgroundColor: '#1A1A1A', borderRadius: 10, paddingVertical: 10,
+    paddingHorizontal: 14, marginBottom: 16, borderWidth: 1, borderColor: '#2A2A2A',
   },
-  fallbackText: { fontSize: 13, color: '#795548' },
+  fallbackText: { fontSize: 13, color: '#8A8A8A' },
+
   sectionLabel: {
-    fontSize: 13, fontWeight: '600', color: '#888',
+    fontSize: 13, fontWeight: '600', color: '#8A8A8A',
     textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
   },
-  itemCard: { backgroundColor: '#f9f9f9', borderRadius: 12, padding: 16, marginBottom: 12 },
-  itemName: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 10 },
+
+  itemCard: {
+    backgroundColor: '#1A1A1A', borderRadius: 12, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  itemName: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
+
+  confidenceText: { fontSize: 12, color: '#8A8A8A', marginBottom: 8 },
+  confidenceLow: { color: '#FF9500' },
+
   portionRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  portionBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: '#e8e8e8', alignItems: 'center' },
-  portionBtnActive: { backgroundColor: '#500000' },
-  portionBtnText: { fontSize: 13, fontWeight: '600', color: '#555' },
-  portionBtnTextActive: { color: '#fff' },
+  portionBtn: {
+    flex: 1, paddingVertical: 8, borderRadius: 8,
+    backgroundColor: '#2A2A2A', alignItems: 'center',
+  },
+  portionBtnActive: { backgroundColor: '#00E5A0' },
+  portionBtnText: { fontSize: 13, fontWeight: '600', color: '#8A8A8A' },
+  portionBtnTextActive: { color: '#0F0F0F' },
+
   macroRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   macroText: {
-    fontSize: 12, color: '#666', backgroundColor: '#ececec',
+    fontSize: 12, color: '#8A8A8A', backgroundColor: '#2A2A2A',
     borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
   },
+
   removeAction: {
-    backgroundColor: '#c62828',
+    backgroundColor: '#FF4444',
     justifyContent: 'center',
     alignItems: 'center',
     width: 90,
@@ -295,20 +467,70 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   removeActionText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+
   emptyCard: {
-    backgroundColor: '#f5f5f5', borderRadius: 12, padding: 24,
-    alignItems: 'center', marginBottom: 12,
+    backgroundColor: '#1A1A1A', borderRadius: 12, padding: 24,
+    alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#2A2A2A',
   },
-  emptyText: { fontSize: 14, color: '#888', fontStyle: 'italic' },
-  totalsCard: { backgroundColor: '#500000', borderRadius: 14, padding: 20, marginTop: 8, marginBottom: 20 },
+  emptyText: { fontSize: 14, color: '#8A8A8A', fontStyle: 'italic' },
+
+  addItemBtn: {
+    borderRadius: 10, paddingVertical: 12, alignItems: 'center',
+    marginBottom: 16, borderWidth: 1, borderColor: '#2A2A2A',
+    backgroundColor: '#1A1A1A',
+  },
+  addItemBtnText: { fontSize: 15, fontWeight: '600', color: '#00E5A0' },
+
+  totalsCard: {
+    backgroundColor: '#1A1A1A', borderRadius: 14, padding: 20,
+    marginTop: 4, marginBottom: 20, borderWidth: 1, borderColor: '#2A2A2A',
+  },
   totalsTitle: {
-    color: '#fff', fontSize: 14, fontWeight: '700',
+    color: '#8A8A8A', fontSize: 12, fontWeight: '700',
     marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1,
   },
   totalsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   totalItem: { alignItems: 'center' },
-  totalValue: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  totalLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '500' },
-  button: { backgroundColor: '#500000', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  totalValue: { color: '#FFFFFF', fontSize: 22, fontWeight: '800' },
+  totalLabel: { color: '#8A8A8A', fontSize: 12, fontWeight: '500', marginTop: 2 },
+
+  button: {
+    backgroundColor: '#00E5A0', borderRadius: 14, paddingVertical: 16, alignItems: 'center',
+  },
+  buttonText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
+
+  // Modal
+  modalContainer: { flex: 1, backgroundColor: '#0F0F0F' },
+  modalHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: '#2A2A2A',
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
+  modalClose: { fontSize: 18, color: '#8A8A8A', paddingLeft: 16 },
+
+  searchRow: { flexDirection: 'row', padding: 16, gap: 10 },
+  searchInput: {
+    flex: 1, backgroundColor: '#1A1A1A', borderRadius: 10, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 15, color: '#FFFFFF',
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  searchBtn: {
+    backgroundColor: '#00E5A0', borderRadius: 10, paddingHorizontal: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  searchBtnDisabled: { opacity: 0.5 },
+  searchBtnText: { color: '#0F0F0F', fontWeight: '700', fontSize: 15 },
+
+  lookupError: {
+    color: '#FF4444', fontSize: 13, paddingHorizontal: 16, marginBottom: 8,
+  },
+
+  menuItemRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: '#2A2A2A',
+  },
+  menuItemName: { fontSize: 15, color: '#FFFFFF', flex: 1 },
+  menuItemMacros: { fontSize: 13, color: '#8A8A8A' },
 });

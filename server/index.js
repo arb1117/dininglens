@@ -121,6 +121,31 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
   }
 });
 
+app.post('/lookup', async (req, res) => {
+  console.log('[/lookup] request received');
+  const { query } = req.body;
+  if (!query) return res.status(400).json({ error: 'query is required' });
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
+      messages: [
+        {
+          role: 'user',
+          content: `Return nutrition facts for a standard serving of ${query} as JSON: {name, calories, protein, carbs, fat}. Return ONLY JSON, no markdown.`,
+        },
+      ],
+    });
+    const raw = response.content[0]?.text ?? '';
+    console.log('[/lookup] Raw response:', raw.slice(0, 200));
+    const parsed = extractJSON(raw);
+    res.json(parsed);
+  } catch (err) {
+    console.error('[/lookup] Error:', err);
+    res.status(500).json({ error: err.message ?? String(err) });
+  }
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3001;

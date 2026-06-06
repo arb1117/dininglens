@@ -34,20 +34,45 @@ function extractJSONArray(text) {
 // ─── Data sources ──────────────────────────────────────────────────────────
 
 async function searchOpenFoodFacts(query) {
-  const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=5&fields=product_name,brands,serving_size,nutriments`;
-  const res = await fetch(url);
+  const url = `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(query)}&fields=product_name,brands,serving_size,serving_quantity,nutriments,lang&page_size=10&lang=en&countries_tags=en:united-states`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
   const data = await res.json();
+
   return (data.products || [])
-    .filter(p => p.product_name && p.nutriments?.['energy-kcal_serving'])
-    .map(p => ({
-      name: `${p.brands ? p.brands.split(',')[0].trim() + ' ' : ''}${p.product_name}`.trim(),
-      serving_size: p.serving_size || '1 serving',
-      calories: Math.round(p.nutriments['energy-kcal_serving'] || 0),
-      protein: Math.round((p.nutriments['proteins_serving'] || 0) * 10) / 10,
-      carbs: Math.round((p.nutriments['carbohydrates_serving'] || 0) * 10) / 10,
-      fat: Math.round((p.nutriments['fat_serving'] || 0) * 10) / 10,
-      source: 'openfoodfacts',
-    }));
+    .map(p => {
+      if (!p.product_name) return null;
+      // Skip products whose names contain no ASCII printable characters (foreign-language)
+      if (!/[\x20-\x7E]/.test(p.product_name)) return null;
+
+      const n = p.nutriments || {};
+      const sq = p.serving_quantity ? parseFloat(p.serving_quantity) : null;
+
+      const calcMacro = (servingKey, per100Key) => {
+        const s = n[servingKey];
+        if (s != null) return s;
+        if (n[per100Key] != null && sq) return n[per100Key] * sq / 100;
+        return null;
+      };
+
+      const kcalServing = calcMacro('energy-kcal_serving', 'energy-kcal_100g');
+      if (kcalServing === null) return null;
+
+      const brand = (p.brands || '').split(',')[0].trim();
+      const name = brand && !p.product_name.toLowerCase().startsWith(brand.toLowerCase())
+        ? `${brand} ${p.product_name}`.trim()
+        : p.product_name;
+
+      return {
+        name,
+        serving_size: p.serving_size || (sq ? `${sq}g` : 'per 100g'),
+        calories: Math.round(kcalServing),
+        protein: Math.round((calcMacro('proteins_serving', 'proteins_100g') ?? 0) * 10) / 10,
+        carbs: Math.round((calcMacro('carbohydrates_serving', 'carbohydrates_100g') ?? 0) * 10) / 10,
+        fat: Math.round((calcMacro('fat_serving', 'fat_100g') ?? 0) * 10) / 10,
+        source: 'openfoodfacts',
+      };
+    })
+    .filter(Boolean);
 }
 
 async function searchUSDA(query) {

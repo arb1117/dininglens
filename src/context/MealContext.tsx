@@ -1,6 +1,9 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MenuItem, FAKE_MENU } from '../services/menuService';
 import { Venue } from '../services/venueService';
+
+const STORAGE_KEY = '@dininglens_meal_log';
 
 export type MacroItem = {
   name: string;
@@ -46,8 +49,24 @@ export function MealProvider({ children }: { children: ReactNode }) {
   const [periodLabel, setPeriodLabel] = useState('Dinner');
   const [venue, setVenue] = useState<Venue | null>(null);
 
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY).then(raw => {
+      if (raw) {
+        try {
+          setMealLog(JSON.parse(raw));
+        } catch {
+          // corrupted storage — start fresh
+        }
+      }
+    });
+  }, []);
+
   function addMeal(meal: LoggedMeal) {
-    setMealLog(prev => [meal, ...prev]);
+    setMealLog(prev => {
+      const next = [meal, ...prev];
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
   }
 
   return (

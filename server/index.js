@@ -620,6 +620,73 @@ app.get('/barcode', async (req, res) => {
   }
 });
 
+// ─── /estimate-exercise ──────────────────────────────────────────────────────
+
+app.post('/estimate-exercise', async (req, res) => {
+  const { name, duration, type } = req.body;
+  if (!name || !duration) return res.status(400).json({ error: 'name and duration required' });
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 128,
+      messages: [{
+        role: 'user',
+        content: `Estimate calories burned for: ${name}, ${duration} minutes, type: ${type || 'cardio'}. Return ONLY JSON: {"caloriesBurned": <number>}`,
+      }],
+    });
+    const parsed = extractJSON(response.content[0]?.text ?? '{}');
+    res.json({ caloriesBurned: Math.round(parsed.caloriesBurned ?? 0) });
+  } catch (err) {
+    // Fallback: rough estimate
+    const kcal = type === 'cardio' ? duration * 7 : duration * 4;
+    res.json({ caloriesBurned: kcal });
+  }
+});
+
+// ─── /chat ───────────────────────────────────────────────────────────────────
+
+const COACH_SYSTEM = `You are a friendly, encouraging nutrition and fitness coach integrated into DiningLens, a macro tracking app. You have access to the user's current food log and goals.
+
+Be conversational and supportive. Keep responses concise (2-4 sentences max unless the user asks for detail). You can:
+- Analyze what they've eaten today and give feedback
+- Suggest specific foods or meals to hit their remaining macros
+- Answer nutrition questions
+- Give workout suggestions
+- Help plan meals
+
+When suggesting foods, format them as: **Food Name** - X cal, Xg protein
+The user can tap a suggested food to add it directly to their log.
+
+Never be preachy or guilt-trip about food choices.`;
+
+app.post('/chat', async (req, res) => {
+  console.log('[/chat] request received');
+  const { message, context, history } = req.body;
+  if (!message) return res.status(400).json({ error: 'message required' });
+
+  const contextBlock = context ? `\n\nUser context:\n- Today: ${context.todayLog?.meals ?? 0} meals logged, ${Math.round(context.todayLog?.totals?.cal ?? 0)} cal eaten\n- Goals: ${context.goals?.calories ?? '?'} cal, ${context.goals?.protein ?? '?'}g protein\n- Streak: ${context.streak ?? 0} days` : '';
+
+  const messages = [
+    ...(Array.isArray(history) ? history.slice(-8).map(h => ({ role: h.role, content: h.content })) : []),
+    { role: 'user', content: message + contextBlock },
+  ];
+
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      system: COACH_SYSTEM,
+      messages,
+    });
+    const reply = response.content[0]?.text ?? "I'm not sure how to answer that.";
+    console.log('[/chat] reply length:', reply.length);
+    res.json({ reply });
+  } catch (err) {
+    console.error('[/chat] Error:', err);
+    res.status(500).json({ error: err.message ?? String(err) });
+  }
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3001;

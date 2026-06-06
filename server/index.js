@@ -27,6 +27,16 @@ function extractJSON(text) {
   return JSON.parse(stripped.slice(start, end + 1));
 }
 
+// Fix 3: shared preamble enforcing food-only detection across all prompts
+const FOOD_PREAMBLE = `You are a food and nutrition analysis assistant. Your job is ONLY to identify food and beverages that appear to be part of the meal being photographed.
+
+STRICT RULES:
+- Only include items the person is clearly eating or about to eat
+- Ignore all background objects (books, plates without food, containers, utensils, furniture, etc.)
+- Ignore packaging, napkins, and non-food items
+- If you see food AND background objects, only include the food
+- Do not identify people, hands, or body parts as food items`;
+
 app.post('/analyze', async (req, res) => {
   console.log('[/analyze] request received');
 
@@ -46,7 +56,9 @@ app.post('/analyze', async (req, res) => {
       .map(i => `- ${i.name}: ${i.calories} cal, ${i.protein}g protein, ${i.carbs}g carbs, ${i.fat}g fat`)
       .join('\n');
 
-    prompt = `You are a nutrition analysis assistant. The user has photographed their meal at a dining hall.
+    prompt = `${FOOD_PREAMBLE}
+
+The user has photographed their meal at a dining hall.
 
 The following items are currently on the menu:
 ${menuList}
@@ -66,7 +78,10 @@ Return ONLY valid JSON in this exact format:
 Portion multiplier: 0.5 = half portion, 1.0 = normal, 1.5 = large, 2.0 = double. Only include items you can actually see.
 Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
   } else {
-    prompt = `You are a nutrition analysis assistant. Identify all food items visible in this photo and estimate their calories and macros.
+    // Fix 2: generic prompt includes reason field instructions for empty results
+    prompt = `${FOOD_PREAMBLE}
+
+Identify all food items visible in this photo and estimate their calories and macros.
 Return ONLY valid JSON in this exact format:
 {
   "detectedItems": [
@@ -82,6 +97,16 @@ Return ONLY valid JSON in this exact format:
   ],
   "mode": "generic"
 }
+
+If you cannot identify any food items, return:
+{"detectedItems": [], "mode": "generic", "reason": "no_food"}
+
+If food is present but the image is too dark, blurry, or low quality to analyze reliably, return:
+{"detectedItems": [], "mode": "generic", "reason": "image_quality"}
+
+If food is present but confidence is too low to identify specific items, return:
+{"detectedItems": [], "mode": "generic", "reason": "low_confidence"}
+
 Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
   }
 
@@ -113,7 +138,7 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
     console.log('[/analyze] Raw response:', raw.slice(0, 200));
 
     const parsed = extractJSON(raw);
-    console.log('[/analyze] Parsed successfully, items:', parsed.detectedItems?.length);
+    console.log('[/analyze] Parsed successfully, items:', parsed.detectedItems?.length, 'reason:', parsed.reason ?? 'none');
     res.json(parsed);
   } catch (err) {
     console.error('[/analyze] Error:', err);
@@ -124,6 +149,9 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
 app.post('/reanalyze', async (req, res) => {
   console.log('[/reanalyze] request received');
   const { imageBase64, feedback, previousItems, menuItems } = req.body;
+
+  // Fix 1: explicit logging so we can confirm the request body is arriving intact
+  console.log(`[/reanalyze] imageBase64 length: ${imageBase64?.length ?? 'MISSING'}, feedback: "${feedback}", previousItems: ${previousItems?.length ?? 0}`);
 
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
   if (!feedback)    return res.status(400).json({ error: 'feedback is required' });
@@ -137,7 +165,9 @@ app.post('/reanalyze', async (req, res) => {
     const menuList = menuItems
       .map(i => `- ${i.name}: ${i.calories} cal, ${i.protein}g protein, ${i.carbs}g carbs, ${i.fat}g fat`)
       .join('\n');
-    prompt = `You are a nutrition analysis assistant. The user has photographed their meal at a dining hall.
+    prompt = `${FOOD_PREAMBLE}
+
+The user has photographed their meal at a dining hall.
 
 The following items are currently on the menu:
 ${menuList}
@@ -159,7 +189,7 @@ Return ONLY valid JSON in this exact format:
 }
 Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
   } else {
-    prompt = `You are a nutrition analysis assistant.
+    prompt = `${FOOD_PREAMBLE}
 
 The previous analysis identified: ${previousList}.
 The user says: '${feedback}'.
@@ -204,6 +234,7 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
     const raw = response.content[0]?.text ?? '';
     console.log('[/reanalyze] Raw response:', raw.slice(0, 200));
     const parsed = extractJSON(raw);
+    console.log('[/reanalyze] Parsed successfully, items:', parsed.detectedItems?.length);
     res.json(parsed);
   } catch (err) {
     console.error('[/reanalyze] Error:', err);

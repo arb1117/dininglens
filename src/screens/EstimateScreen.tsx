@@ -51,6 +51,15 @@ function buildInitialItems(
   analysisResult: Props['route']['params']['analysisResult'],
   menuItems: ReturnType<typeof useMealContext>['menuItems']
 ): NormalizedItem[] {
+  // Image quality / low confidence errors: start empty so user sees the error banner,
+  // not a confusing set of fallback items
+  if (
+    analysisResult?.reason === 'image_quality' ||
+    analysisResult?.reason === 'low_confidence'
+  ) {
+    return [];
+  }
+
   if (!analysisResult || analysisResult.detectedItems.length === 0) {
     return menuItems.slice(0, 3).map((item, i) => ({
       id: item.id ?? `fallback-${i}`,
@@ -224,6 +233,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
   async function handleReanalyze() {
     if (!feedbackText.trim() || !imageBase64) return;
+    console.log('[reanalyze] starting, imageBase64 length:', imageBase64.length, 'server:', SERVER_URL);
     setReanalyzing(true);
     setReanalyzeError(null);
     try {
@@ -237,15 +247,20 @@ export default function EstimateScreen({ navigation, route }: Props) {
           menuItems: isDiningHallMode ? menuItems : undefined,
         }),
       });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(`Server ${res.status}: ${errBody.error ?? 'unknown error'}`);
+      }
       const newResult = await res.json() as AnalysisResult;
+      console.log('[reanalyze] success, items:', newResult.detectedItems?.length);
       const newItems = buildInitialItems(newResult, menuItems);
       setItems(newItems);
       setPortions(Object.fromEntries(newItems.map(i => [i.id, i.initialPortion])));
       setFeedbackText('');
       setHasReanalyzed(true);
-    } catch {
-      setReanalyzeError('Re-evaluate failed — check your connection and try again.');
+    } catch (err) {
+      console.error('[reanalyze] error:', err);
+      setReanalyzeError(err instanceof Error ? err.message : 'Re-evaluate failed — check your connection.');
     } finally {
       setReanalyzing(false);
     }
@@ -278,12 +293,28 @@ export default function EstimateScreen({ navigation, route }: Props) {
     navigation.pop();
   }
 
-  const isFallback = !hasReanalyzed && (!analysisResult || analysisResult.detectedItems.length === 0);
+  const imageQualityError = !hasReanalyzed && (
+    analysisResult?.reason === 'image_quality' || analysisResult?.reason === 'low_confidence'
+  );
+  const isFallback = !hasReanalyzed && !imageQualityError &&
+    (!analysisResult || analysisResult.detectedItems.length === 0);
 
   return (
     <>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.header}>Meal Estimate</Text>
+
+        {/* Fix 2: image quality / low confidence error banner */}
+        {imageQualityError && (
+          <View style={styles.imageQualityBanner}>
+            <Text style={styles.imageQualityText}>
+              📸 Image too dark or unclear — try again in better lighting
+            </Text>
+            <TouchableOpacity style={styles.retakeBtn} onPress={() => navigation.pop()}>
+              <Text style={styles.retakeBtnText}>Retake</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {venue && !isFallback && (
           <View style={styles.venueCard}>
@@ -506,6 +537,24 @@ const styles = StyleSheet.create({
 
   headerBack: { paddingRight: 16, paddingVertical: 4 },
   headerBackText: { color: '#FFFFFF', fontSize: 16 },
+
+  imageQualityBanner: {
+    backgroundColor: '#2A1500',
+    borderWidth: 1,
+    borderColor: '#FF9500',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  imageQualityText: { flex: 1, fontSize: 14, color: '#FF9500', fontWeight: '500' },
+  retakeBtn: {
+    backgroundColor: '#FF9500', borderRadius: 8,
+    paddingVertical: 8, paddingHorizontal: 14,
+  },
+  retakeBtnText: { color: '#0F0F0F', fontWeight: '700', fontSize: 13 },
 
   venueCard: {
     backgroundColor: '#1A1A1A', borderRadius: 10, paddingVertical: 10,

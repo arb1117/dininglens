@@ -16,6 +16,7 @@ export type DetectedItem = {
 export type AnalysisResult = {
   detectedItems: DetectedItem[];
   mode: 'dining_hall' | 'generic';
+  reason?: 'image_quality' | 'low_confidence' | 'no_food';
 };
 
 export async function analyzeImage(

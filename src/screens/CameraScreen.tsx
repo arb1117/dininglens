@@ -15,9 +15,12 @@ import { fetchMenu } from '../services/menuService';
 import { analyzeImage } from '../services/visionService';
 import { useMealContext } from '../context/MealContext';
 
+const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
+
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Camera'> };
 
 type DiningHallStatus = 'inactive' | 'loading' | 'active';
+type ScanMode = 'photo' | 'barcode';
 
 export default function CameraScreen({ navigation }: Props) {
   const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems, mealLog } =
@@ -28,8 +31,12 @@ export default function CameraScreen({ navigation }: Props) {
   const [analyzing, setAnalyzing] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [torch, setTorch] = useState(false);
+  const [scanMode, setScanMode] = useState<ScanMode>('photo');
+  const [barcodeScanning, setBarcodeScanning] = useState(false);
+  const [barcodeError, setBarcodeError] = useState<string | null>(null);
 
   const cameraRef = useRef<CameraView>(null);
+  const lastScanAt = useRef<number>(0);
 
   const isDiningHallMode = diningHallStatus === 'active';
 
@@ -126,6 +133,42 @@ export default function CameraScreen({ navigation }: Props) {
     }
   }
 
+  async function handleBarcodeScan({ data }: { data: string }) {
+    const now = Date.now();
+    if (now - lastScanAt.current < 3000 || barcodeScanning) return;
+    lastScanAt.current = now;
+    setBarcodeScanning(true);
+    setBarcodeError(null);
+    try {
+      const res = await fetch(`${SERVER_URL}/barcode?code=${encodeURIComponent(data)}`);
+      if (res.status === 404) {
+        setBarcodeError('Product not found — try scanning again');
+        setBarcodeScanning(false);
+        return;
+      }
+      if (!res.ok) throw new Error(`Server ${res.status}`);
+      const product = await res.json();
+      const analysisResult = {
+        detectedItems: [{
+          name: product.name,
+          portionMultiplier: (product.estimatedQuantityGrams || 100) / 100,
+          confidence: 1.0,
+          estimatedQuantityGrams: product.estimatedQuantityGrams || 100,
+          calories: product.calories,
+          protein: product.protein,
+          carbs: product.carbs,
+          fat: product.fat,
+        }],
+        mode: 'generic' as const,
+      };
+      navigation.navigate('Estimate', { analysisResult, source: 'barcode' });
+    } catch {
+      setBarcodeError('Lookup failed — try again');
+    } finally {
+      setBarcodeScanning(false);
+    }
+  }
+
   if (!permission) {
     return <View style={styles.center}><ActivityIndicator color="#00E5A0" /></View>;
   }
@@ -135,7 +178,7 @@ export default function CameraScreen({ navigation }: Props) {
       <SafeAreaView style={styles.permissionScreen}>
         <Text style={styles.permissionTitle}>Camera Access Needed</Text>
         <Text style={styles.permissionBody}>
-          DiningLens needs camera access to photograph your meal and estimate macros.
+          DiningLens needs camera access to photograph your meal and scan barcodes.
           {'\n\n'}Enable it in Settings → Privacy → Camera.
         </Text>
         <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
@@ -147,7 +190,16 @@ export default function CameraScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={styles.camera} facing="back" enableTorch={torch}>
+      <CameraView
+        ref={cameraRef}
+        style={styles.camera}
+        facing="back"
+        enableTorch={torch}
+        onBarcodeScanned={scanMode === 'barcode' ? handleBarcodeScan : undefined}
+        barcodeScannerSettings={scanMode === 'barcode' ? {
+          barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'qr', 'code128', 'code39'],
+        } : undefined}
+      >
 
         {/* Active venue banner — slim top bar with teal background */}
         {diningHallStatus === 'active' && venue && (
@@ -192,6 +244,18 @@ export default function CameraScreen({ navigation }: Props) {
           </View>
         )}
 
+        {/* Barcode mode overlay */}
+        {scanMode === 'barcode' && (
+          <View style={styles.barcodeOverlay} pointerEvents="none">
+            <View style={styles.barcodeFrame} />
+            <Text style={styles.barcodeScanText}>
+              {barcodeScanning ? 'Looking up product…' : 'Point camera at barcode'}
+            </Text>
+            {barcodeError && <Text style={styles.barcodeErrorText}>{barcodeError}</Text>}
+            {barcodeScanning && <ActivityIndicator color="#00E5A0" style={{ marginTop: 8 }} />}
+          </View>
+        )}
+
         {/* Torch toggle — top-right */}
         <TouchableOpacity
           style={[styles.torchButton, torch && styles.torchButtonOn]}
@@ -200,16 +264,30 @@ export default function CameraScreen({ navigation }: Props) {
           <Text style={styles.torchButtonText}>🔦</Text>
         </TouchableOpacity>
 
-        {/* Shutter — centered, 80px from bottom */}
-        <View style={styles.shutterContainer} pointerEvents="box-none">
-          <TouchableOpacity
-            style={[styles.shutter, analyzing && styles.shutterDisabled]}
-            onPress={handleShutter}
-            disabled={analyzing}
-          >
-            <View style={styles.shutterInner} />
-          </TouchableOpacity>
-        </View>
+        {/* Barcode toggle — top-right, below torch */}
+        <TouchableOpacity
+          style={[styles.barcodeButton, scanMode === 'barcode' && styles.barcodeButtonOn]}
+          onPress={() => {
+            setScanMode(m => m === 'barcode' ? 'photo' : 'barcode');
+            setBarcodeError(null);
+            lastScanAt.current = 0;
+          }}
+        >
+          <Text style={styles.barcodeButtonText}>📦</Text>
+        </TouchableOpacity>
+
+        {/* Shutter — centered, 80px from bottom (hidden in barcode mode) */}
+        {scanMode === 'photo' && (
+          <View style={styles.shutterContainer} pointerEvents="box-none">
+            <TouchableOpacity
+              style={[styles.shutter, analyzing && styles.shutterDisabled]}
+              onPress={handleShutter}
+              disabled={analyzing}
+            >
+              <View style={styles.shutterInner} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Search button — bottom-left, above venue chip */}
         <TouchableOpacity
@@ -441,6 +519,51 @@ const styles = StyleSheet.create({
   },
   torchButtonOn: { backgroundColor: 'rgba(255,255,255,0.9)' },
   torchButtonText: { fontSize: 22 },
+
+  // Barcode toggle button — top-right, below torch
+  barcodeButton: {
+    position: 'absolute',
+    right: 20,
+    top: 116,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  barcodeButtonOn: { backgroundColor: '#00E5A0' },
+  barcodeButtonText: { fontSize: 22 },
+
+  // Barcode scanning overlay
+  barcodeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  barcodeFrame: {
+    width: 260,
+    height: 170,
+    borderWidth: 2,
+    borderColor: '#00E5A0',
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+  },
+  barcodeScanText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    marginTop: 18,
+    textAlign: 'center',
+  },
+  barcodeErrorText: {
+    color: '#FF9500',
+    fontSize: 13,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
 
   // Permission screen
   permissionScreen: {

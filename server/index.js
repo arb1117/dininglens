@@ -547,6 +547,54 @@ app.post('/scrape-menu', async (req, res) => {
   }
 });
 
+// ─── /barcode ────────────────────────────────────────────────────────────────
+// Looks up a product by barcode via Open Food Facts
+
+app.get('/barcode', async (req, res) => {
+  console.log('[/barcode] request received');
+  const code = req.query.code;
+  if (!code) return res.status(400).json({ error: 'code is required' });
+
+  try {
+    const url = `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(code)}.json`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const data = await r.json();
+
+    if (data.status !== 1 || !data.product) {
+      console.log(`[/barcode] not found: ${code}`);
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const p = data.product;
+    const n = p.nutriments || {};
+
+    const cal100g = n['energy-kcal_100g'] || 0;
+    const pro100g = n['proteins_100g'] || 0;
+    const carb100g = n['carbohydrates_100g'] || 0;
+    const fat100g = n['fat_100g'] || 0;
+
+    const servingGrams = parseFloat(p.serving_quantity) || 100;
+    const brand = p.brands ? p.brands.split(',')[0].trim() + ' ' : '';
+    const name = `${brand}${p.product_name || 'Unknown Product'}`.trim();
+
+    const result = {
+      name,
+      serving_size: p.serving_size || `${servingGrams}g`,
+      calories: Math.round((cal100g * servingGrams) / 100),
+      protein: Math.round((pro100g * servingGrams) / 100 * 10) / 10,
+      carbs: Math.round((carb100g * servingGrams) / 100 * 10) / 10,
+      fat: Math.round((fat100g * servingGrams) / 100 * 10) / 10,
+      estimatedQuantityGrams: servingGrams,
+      source: 'barcode',
+    };
+    console.log(`[/barcode] found: ${name}, serving=${servingGrams}g, cal=${result.calories}`);
+    return res.json(result);
+  } catch (err) {
+    console.error('[/barcode] Error:', err.message);
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3001;

@@ -141,7 +141,7 @@ function buildInitialItems(
 
 export default function EstimateScreen({ navigation, route }: Props) {
   const { addMeal, menuItems, venue } = useMealContext();
-  const { analysisResult, imageBase64 } = route.params;
+  const { analysisResult, imageBase64, source } = route.params;
 
   const [items, setItems] = useState<NormalizedItem[]>(() =>
     buildInitialItems(analysisResult, menuItems)
@@ -379,7 +379,14 @@ export default function EstimateScreen({ navigation, route }: Props) {
   return (
     <>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.header}>Meal Estimate</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.header}>Meal Estimate</Text>
+          {source === 'barcode' && (
+            <View style={styles.barcodeBadge}>
+              <Text style={styles.barcodeBadgeText}>📦 Scanned</Text>
+            </View>
+          )}
+        </View>
 
         {/* Fix 2: image quality / low confidence error banner */}
         {imageQualityError && (
@@ -661,7 +668,13 @@ export default function EstimateScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F0F0F' },
   content: { padding: 20, paddingBottom: 40 },
-  header: { fontSize: 22, fontWeight: '800', color: '#FFFFFF', marginBottom: 12, marginTop: 8 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, marginTop: 8 },
+  header: { fontSize: 22, fontWeight: '800', color: '#FFFFFF' },
+  barcodeBadge: {
+    backgroundColor: '#1A2A1A', borderWidth: 1, borderColor: '#00E5A0',
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
+  },
+  barcodeBadgeText: { fontSize: 12, fontWeight: '700', color: '#00E5A0' },
 
   headerBack: { paddingRight: 16, paddingVertical: 4 },
   headerBackText: { color: '#FFFFFF', fontSize: 16 },

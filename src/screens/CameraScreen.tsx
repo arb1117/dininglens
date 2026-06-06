@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   SafeAreaView,
+  Modal,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -35,6 +36,7 @@ export default function CameraScreen({ navigation }: Props) {
   const [barcodeScanning, setBarcodeScanning] = useState(false);
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
   const [showMacroBar, setShowMacroBar] = useState(false);
+  const [showStreakModal, setShowStreakModal] = useState(false);
 
   const cameraRef = useRef<CameraView>(null);
   const lastScanAt = useRef<number>(0);
@@ -54,6 +56,23 @@ export default function CameraScreen({ navigation }: Props) {
         }),
         { cal: 0, protein: 0, carbs: 0, fat: 0 }
       );
+  }, [mealLog]);
+
+  const streak = useMemo(() => {
+    const loggedDates = new Set(
+      mealLog.map(m => new Date(m.timestamp).toDateString())
+    );
+    const d = new Date();
+    // If today has no log, start counting from yesterday
+    if (!loggedDates.has(d.toDateString())) {
+      d.setDate(d.getDate() - 1);
+    }
+    let count = 0;
+    while (loggedDates.has(d.toDateString())) {
+      count++;
+      d.setDate(d.getDate() - 1);
+    }
+    return count;
   }, [mealLog]);
 
   const calProgress = Math.min(todayTotals.cal / goals.calories, 1);
@@ -325,9 +344,20 @@ export default function CameraScreen({ navigation }: Props) {
             <Text style={styles.summaryEmpty}>Start logging · tap to track</Text>
           ) : (
             <>
-              <Text style={styles.summaryCalLine}>
-                {formatCal(todayTotals.cal)} cal today
-              </Text>
+              <View style={styles.summaryCalRow}>
+                <Text style={styles.summaryCalLine}>
+                  {formatCal(todayTotals.cal)} cal today
+                </Text>
+                {streak >= 2 && (
+                  <TouchableOpacity
+                    style={styles.streakBadge}
+                    onPress={e => { e.stopPropagation?.(); setShowStreakModal(true); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.streakText}>🔥 {streak}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               {showMacroBar && (
                 <View style={styles.summaryMacros}>
                   <Text style={styles.summarySep}>{todayTotals.protein}g protein</Text>
@@ -349,6 +379,33 @@ export default function CameraScreen({ navigation }: Props) {
         </TouchableOpacity>
 
       </CameraView>
+
+      {/* Streak modal */}
+      <Modal
+        visible={showStreakModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowStreakModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.streakModalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowStreakModal(false)}
+        >
+          <View style={styles.streakModalBox}>
+            <Text style={styles.streakModalEmoji}>🔥</Text>
+            <Text style={styles.streakModalTitle}>
+              You've logged {streak} days in a row!
+            </Text>
+            <TouchableOpacity
+              style={styles.streakModalBtn}
+              onPress={() => setShowStreakModal(false)}
+            >
+              <Text style={styles.streakModalBtnText}>Nice!</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -478,7 +535,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     textAlign: 'center',
-    marginBottom: 6,
   },
   summaryMacros: {
     flexDirection: 'row',
@@ -590,4 +646,36 @@ const styles = StyleSheet.create({
     paddingVertical: 16, paddingHorizontal: 32,
   },
   permissionButtonText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
+
+  // Summary bar cal row (with optional streak badge)
+  summaryCalRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, marginBottom: 6,
+  },
+  streakBadge: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3,
+  },
+  streakText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
+
+  // Streak modal
+  streakModalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  streakModalBox: {
+    backgroundColor: '#1A1A1A', borderRadius: 20, padding: 32,
+    alignItems: 'center', width: 280,
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  streakModalEmoji: { fontSize: 48, marginBottom: 12 },
+  streakModalTitle: {
+    fontSize: 17, fontWeight: '700', color: '#FFFFFF',
+    textAlign: 'center', marginBottom: 24, lineHeight: 24,
+  },
+  streakModalBtn: {
+    backgroundColor: '#00E5A0', borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 40,
+  },
+  streakModalBtnText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
 });

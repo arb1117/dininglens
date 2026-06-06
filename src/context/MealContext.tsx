@@ -3,8 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MenuItem, FAKE_MENU } from '../services/menuService';
 import { Venue } from '../services/venueService';
 
-const STORAGE_KEY = '@dininglens_meal_log';
-const GOALS_KEY   = '@dininglens_goals';
+const STORAGE_KEY      = '@dininglens_meal_log';
+const GOALS_KEY        = '@dininglens_goals';
+const LAST_LOGGED_KEY  = '@dininglens_last_logged';
 
 export type UserGoals = {
   preset: 'lose' | 'maintain' | 'build';
@@ -96,6 +97,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
     setMealLog(prev => {
       const next = [meal, ...prev];
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      AsyncStorage.setItem(LAST_LOGGED_KEY, new Date().toDateString()).catch(() => {});
       return next;
     });
   }

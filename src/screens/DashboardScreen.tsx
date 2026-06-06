@@ -7,12 +7,11 @@ import Svg, { Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
-import { useMealContext } from '../context/MealContext';
+import { useMealContext, periodFromTimestamp } from '../context/MealContext';
+import type { MealPeriod } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
-
-type MealPeriod = 'breakfast' | 'lunch' | 'dinner' | 'snacks';
 
 const PERIOD_ORDER: MealPeriod[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
 const PERIOD_LABELS: Record<MealPeriod, string> = {
@@ -29,16 +28,6 @@ type ExerciseEntry = {
   type: 'cardio' | 'strength' | 'other';
   caloriesBurned: number;
 };
-
-function getPeriodFromTimestamp(ts: string): MealPeriod {
-  const d = new Date(ts);
-  const h = d.getHours();
-  const m = d.getMinutes();
-  if (h < 10 || (h === 10 && m < 30)) return 'breakfast';
-  if (h < 15) return 'lunch';
-  if (h < 20) return 'dinner';
-  return 'snacks';
-}
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -327,7 +316,7 @@ export default function DashboardScreen() {
       breakfast: [], lunch: [], dinner: [], snacks: [],
     };
     for (const meal of todayMeals) {
-      const period = (meal as any).period ?? getPeriodFromTimestamp(meal.timestamp);
+      const period = meal.period ?? periodFromTimestamp(meal.timestamp);
       for (const item of meal.items) {
         groups[period as MealPeriod]?.push({ mealId: meal.id, name: item.name, cal: item.cal, portion: item.portion });
       }

@@ -7,7 +7,7 @@ import {
 import { Swipeable } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { useMealContext, MacroItem, LoggedMeal } from '../context/MealContext';
+import { useMealContext, MacroItem, LoggedMeal, autoDetectPeriod } from '../context/MealContext';
 import { MenuItem } from '../services/menuService';
 import { AnalysisResult } from '../services/visionService';
 
@@ -368,7 +368,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
       const scaled = getScaled(item, portion);
       return { name: item.name, portion: VISUAL_LABELS[portion].label, ...scaled };
     });
-    addMeal({ id: String(Date.now()), timestamp: new Date().toLocaleString(), items: mealItems, totals });
+    addMeal({ id: String(Date.now()), timestamp: new Date().toISOString(), period: autoDetectPeriod(), items: mealItems, totals });
     navigation.pop();
   }
 

@@ -2,6 +2,8 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
+  TextInput,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -10,11 +12,11 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { KNOWN_VENUES, detectVenue } from '../services/venueService';
+import { KNOWN_VENUES, detectVenue, Venue } from '../services/venueService';
 import { fetchVenueMenu } from '../services/menuService';
+import { CHAIN_MENUS, getChainMenuItems } from '../data/chainMenus';
 import { analyzeImage } from '../services/visionService';
 import { useMealContext } from '../context/MealContext';
 
@@ -24,6 +26,16 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Camera'>;
 
 type DiningHallStatus = 'inactive' | 'loading' | 'active';
 type ScanMode = 'photo' | 'barcode';
+type EatingOutMode = 'options' | 'search';
+
+type VenueSearchResult = {
+  id: string;
+  name: string;
+  subtitle?: string;
+  type: 'dining_hall' | 'restaurant';
+  venueRef?: Venue;
+  chainName?: string;
+};
 
 export default function CameraScreen({ navigation, route }: Props) {
   const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems, mealLog, goals } =
@@ -40,6 +52,10 @@ export default function CameraScreen({ navigation, route }: Props) {
   const [barcodeScanning, setBarcodeScanning] = useState(false);
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
   const [showStreakModal, setShowStreakModal] = useState(false);
+  const [showEatingOutModal, setShowEatingOutModal] = useState(false);
+  const [eatingOutMode, setEatingOutMode] = useState<EatingOutMode>('options');
+  const [venueSearch, setVenueSearch] = useState('');
+  const [detectingLocation, setDetectingLocation] = useState(false);
 
   const cameraRef = useRef<CameraView>(null);
   const lastScanAt = useRef<number>(0);
@@ -80,6 +96,29 @@ export default function CameraScreen({ navigation, route }: Props) {
 
   const calProgress = Math.min(todayTotals.cal / goals.calories, 1);
   const calOver = todayTotals.cal > goals.calories;
+
+  const venueSearchResults = useMemo((): VenueSearchResult[] => {
+    const q = venueSearch.trim().toLowerCase();
+    const results: VenueSearchResult[] = [];
+
+    KNOWN_VENUES.forEach(v => {
+      if (!q || v.name.toLowerCase().includes(q) || v.institution.toLowerCase().includes(q)) {
+        results.push({ id: `venue-${v.id}`, name: v.name, subtitle: v.institution, type: 'dining_hall', venueRef: v });
+      }
+    });
+
+    Object.keys(CHAIN_MENUS).forEach(chain => {
+      if (!q || chain.toLowerCase().includes(q)) {
+        results.push({
+          id: `chain-${chain}`, name: chain,
+          subtitle: `${CHAIN_MENUS[chain].length} items`,
+          type: 'restaurant', chainName: chain,
+        });
+      }
+    });
+
+    return results.slice(0, 30);
+  }, [venueSearch]);
 
   function formatCal(n: number): string {
     return n >= 1000
@@ -237,6 +276,56 @@ export default function CameraScreen({ navigation, route }: Props) {
     }
   }
 
+  function closeEatingOutModal() {
+    setShowEatingOutModal(false);
+    setEatingOutMode('options');
+    setVenueSearch('');
+  }
+
+  async function handleUseLocation() {
+    setDetectingLocation(true);
+    try {
+      const detected = await detectVenue();
+      closeEatingOutModal();
+      if (!detected) { setErrorBanner('No venue found nearby'); return; }
+      if (detected.type === 'restaurant' && detected.menuItems?.length) {
+        setVenue(detected);
+        setMenuItems(detected.menuItems);
+        setPeriodLabel('Menu');
+        setDiningHallStatus('active');
+      } else if (detected.type === 'dining_hall') {
+        enableDiningHallModeForVenue(detected);
+      }
+    } catch {
+      setErrorBanner('Location detection failed');
+    } finally {
+      setDetectingLocation(false);
+    }
+  }
+
+  async function handleSelectVenue(result: VenueSearchResult) {
+    closeEatingOutModal();
+    if (result.type === 'dining_hall' && result.venueRef) {
+      enableDiningHallModeForVenue(result.venueRef);
+    } else if (result.chainName) {
+      const items = getChainMenuItems(result.chainName);
+      const syntheticVenue: Venue = {
+        id: result.chainName,
+        name: result.name,
+        institution: result.name,
+        type: 'restaurant',
+        locationId: result.chainName,
+        provider: 'generic',
+        coords: { lat: 0, lon: 0 },
+        menuItems: items,
+      };
+      setVenue(syntheticVenue);
+      setMenuItems(items);
+      setPeriodLabel('Menu');
+      setDiningHallStatus('active');
+    }
+  }
+
   if (!permission) {
     return <View style={styles.center}><ActivityIndicator color="#00E5A0" /></View>;
   }
@@ -372,6 +461,16 @@ export default function CameraScreen({ navigation, route }: Props) {
           <Text style={styles.searchButtonText}>🔍</Text>
         </TouchableOpacity>
 
+        {/* Eating out? chip — bottom-left, when no venue detected */}
+        {diningHallStatus === 'inactive' && (
+          <TouchableOpacity
+            style={styles.eatingOutChip}
+            onPress={() => setShowEatingOutModal(true)}
+          >
+            <Text style={styles.eatingOutChipText}>🍽 Eating out?</Text>
+          </TouchableOpacity>
+        )}
+
         {/* History button — bottom-right */}
         <TouchableOpacity
           style={styles.historyButton}
@@ -424,6 +523,70 @@ export default function CameraScreen({ navigation, route }: Props) {
         </TouchableOpacity>
 
       </CameraView>
+
+      {/* Eating out? modal */}
+      <Modal
+        visible={showEatingOutModal}
+        transparent
+        animationType="slide"
+        onRequestClose={closeEatingOutModal}
+      >
+        <TouchableOpacity style={styles.eoBackdrop} activeOpacity={1} onPress={closeEatingOutModal} />
+        <View style={styles.eoSheet}>
+          <View style={styles.eoHandle} />
+          <Text style={styles.eoTitle}>Where are you eating?</Text>
+
+          {eatingOutMode === 'options' ? (
+            <>
+              <TouchableOpacity style={styles.eoOption} onPress={handleUseLocation} disabled={detectingLocation}>
+                <Text style={styles.eoOptionIcon}>📍</Text>
+                <View style={styles.eoOptionText}>
+                  <Text style={styles.eoOptionTitle}>Use my location</Text>
+                  <Text style={styles.eoOptionSub}>Auto-detect nearby venue or restaurant</Text>
+                </View>
+                {detectingLocation && <ActivityIndicator color="#00E5A0" size="small" />}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.eoOption} onPress={() => setEatingOutMode('search')}>
+                <Text style={styles.eoOptionIcon}>🔍</Text>
+                <View style={styles.eoOptionText}>
+                  <Text style={styles.eoOptionTitle}>Search a place</Text>
+                  <Text style={styles.eoOptionSub}>Type a dining hall or restaurant name</Text>
+                </View>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TextInput
+                style={styles.eoSearchInput}
+                placeholder="Search dining halls & restaurants…"
+                placeholderTextColor="#555"
+                value={venueSearch}
+                onChangeText={setVenueSearch}
+                autoFocus
+              />
+              <FlatList
+                data={venueSearchResults}
+                keyExtractor={item => item.id}
+                keyboardShouldPersistTaps="handled"
+                style={styles.eoResultList}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.eoResult} onPress={() => handleSelectVenue(item)}>
+                    <Text style={styles.eoResultIcon}>{item.type === 'dining_hall' ? '🍽' : '🍔'}</Text>
+                    <View style={styles.eoResultText}>
+                      <Text style={styles.eoResultName}>{item.name}</Text>
+                      {item.subtitle ? <Text style={styles.eoResultSub}>{item.subtitle}</Text> : null}
+                    </View>
+                  </TouchableOpacity>
+                )}
+              />
+            </>
+          )}
+
+          <TouchableOpacity style={styles.eoCancel} onPress={closeEatingOutModal}>
+            <Text style={styles.eoCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* Streak modal */}
       <Modal
@@ -533,11 +696,11 @@ const styles = StyleSheet.create({
   },
   galleryButtonText: { fontSize: 24 },
 
-  // Search button — bottom-left, above venue chip
+  // Search button — bottom-left, above eating-out chip
   searchButton: {
     position: 'absolute',
     left: 20,
-    bottom: 165,
+    bottom: 205,
     width: 48,
     height: 48,
     borderRadius: 24,
@@ -546,6 +709,67 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   searchButtonText: { fontSize: 22 },
+
+  // Eating out? chip — bottom-left
+  eatingOutChip: {
+    position: 'absolute',
+    left: 16,
+    bottom: 155,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 20,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  eatingOutChipText: { fontSize: 13, color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+
+  // Eating out modal
+  eoBackdrop: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  eoSheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: '#1A1A1A',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingBottom: 34,
+    paddingHorizontal: 20,
+    borderTopWidth: 1, borderColor: '#2A2A2A',
+    maxHeight: '75%',
+  },
+  eoHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: '#3A3A3A', alignSelf: 'center', marginTop: 12, marginBottom: 18,
+  },
+  eoTitle: {
+    fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 16,
+  },
+  eoOption: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#2A2A2A',
+  },
+  eoOptionIcon: { fontSize: 22, width: 28, textAlign: 'center' },
+  eoOptionText: { flex: 1 },
+  eoOptionTitle: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
+  eoOptionSub: { fontSize: 12, color: '#8A8A8A', marginTop: 2 },
+  eoSearchInput: {
+    backgroundColor: '#0F0F0F', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+    fontSize: 15, color: '#FFFFFF',
+    borderWidth: 1, borderColor: '#2A2A2A', marginBottom: 10,
+  },
+  eoResultList: { flexGrow: 0, maxHeight: 300 },
+  eoResult: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#2A2A2A',
+  },
+  eoResultIcon: { fontSize: 18, width: 24, textAlign: 'center' },
+  eoResultText: { flex: 1 },
+  eoResultName: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  eoResultSub: { fontSize: 12, color: '#8A8A8A', marginTop: 1 },
+  eoCancel: { paddingVertical: 18, alignItems: 'center', marginTop: 4 },
+  eoCancelText: { fontSize: 15, color: '#8A8A8A', fontWeight: '600' },
 
   // History button — bottom-right
   historyButton: {

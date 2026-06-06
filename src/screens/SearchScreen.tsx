@@ -14,13 +14,12 @@ const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:300
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Search'>;
 
-type FilterKey = 'all' | 'myfoods' | 'common' | 'branded';
+type FilterKey = 'all' | 'myfoods' | 'common';
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all',     label: 'All' },
   { key: 'myfoods', label: 'My Foods' },
   { key: 'common',  label: 'Common' },
-  { key: 'branded', label: 'Branded' },
 ];
 
 const PERIOD_LABELS: Record<MealPeriod, string> = {
@@ -38,6 +37,7 @@ type ApiResult = {
   carbs: number;
   fat: number;
   source?: string;
+  brand?: string;
 };
 
 type DisplayResult = {
@@ -47,6 +47,7 @@ type DisplayResult = {
   carbs: number;
   fat: number;
   serving_size: string;
+  brand?: string;
 };
 
 type SheetState = {
@@ -143,11 +144,21 @@ export default function SearchScreen({ navigation, route }: Props) {
   const displayResults = useMemo((): DisplayResult[] => {
     if (filter === 'myfoods') return myFoodResults;
 
-    const apiDisplay = apiResults.filter(r => {
-      if (filter === 'common')  return !r.source || r.source === 'usda';
-      if (filter === 'branded') return r.source === 'openfoodfacts';
-      return true;
-    });
+    // 'common' = USDA only; 'all' = everything
+    const apiDisplay: DisplayResult[] = apiResults
+      .filter(r => filter !== 'common' || !r.source || r.source === 'usda')
+      .map(r => {
+        const brandInName = r.brand && r.name.toLowerCase().includes(r.brand.toLowerCase());
+        return {
+          name:         r.name,
+          calories:     r.calories,
+          protein:      r.protein,
+          carbs:        r.carbs,
+          fat:          r.fat,
+          serving_size: r.serving_size,
+          brand:        !brandInName ? r.brand : undefined,
+        };
+      });
 
     if (filter !== 'all') return apiDisplay;
 
@@ -375,6 +386,9 @@ export default function SearchScreen({ navigation, route }: Props) {
         }
         renderItem={({ item }) => (
           <TouchableOpacity style={s.resultCard} onPress={() => openSheet(item)} activeOpacity={0.8}>
+            {item.brand ? (
+              <Text style={s.resultBrand} numberOfLines={1}>{item.brand}</Text>
+            ) : null}
             <Text style={s.resultName} numberOfLines={2}>{item.name}</Text>
             <Text style={s.resultMeta}>~{Math.round(item.calories)} cal per serving</Text>
           </TouchableOpacity>
@@ -506,6 +520,7 @@ const s = StyleSheet.create({
     backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, marginBottom: 8,
     borderWidth: 1, borderColor: '#2A2A2A',
   },
+  resultBrand: { fontSize: 11, fontWeight: '600', color: '#00E5A0', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
   resultName: { fontSize: 15, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
   resultMeta: { fontSize: 13, color: '#8A8A8A' },
 

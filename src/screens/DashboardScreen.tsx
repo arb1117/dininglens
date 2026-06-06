@@ -368,8 +368,15 @@ export default function DashboardScreen() {
         {/* Food log by period */}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Today's Log</Text>
-          {PERIOD_ORDER.map(period => {
+          {todayMeals.length === 0 ? (
+            <View style={s.emptyTodayCard}>
+              <Text style={s.emptyTodayIcon}>🍽</Text>
+              <Text style={s.emptyTodayText}>Nothing logged yet today.</Text>
+              <Text style={s.emptyTodaySubText}>Tap + to add your first meal.</Text>
+            </View>
+          ) : PERIOD_ORDER.map(period => {
             const items = mealsByPeriod[period];
+            if (items.length === 0) return null;
             const periodCal = items.reduce((a, i) => a + i.cal, 0);
             return (
               <View key={period} style={s.periodGroup}>
@@ -385,26 +392,22 @@ export default function DashboardScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
-                {items.length === 0 ? (
-                  <Text style={s.emptyPeriod}>Tap + to add {PERIOD_LABELS[period].toLowerCase()}</Text>
-                ) : (
-                  items.map((item, i) => (
-                    <TouchableOpacity
-                      key={`${item.mealId}-${i}`}
-                      style={s.foodItem}
-                      onPress={() => navigation.navigate('Search', {
-                        editMode: true,
-                        mealId: item.mealId,
-                        itemIndex: item.itemIndex,
-                        query: item.name,
-                        existingItem: item.item,
-                      })}
-                    >
-                      <Text style={s.foodItemName} numberOfLines={1}>{item.name}</Text>
-                      <Text style={s.foodItemCal}>{item.cal} cal</Text>
-                    </TouchableOpacity>
-                  ))
-                )}
+                {items.map((item, i) => (
+                  <TouchableOpacity
+                    key={`${item.mealId}-${i}`}
+                    style={s.foodItem}
+                    onPress={() => navigation.navigate('Search', {
+                      editMode: true,
+                      mealId: item.mealId,
+                      itemIndex: item.itemIndex,
+                      query: item.name,
+                      existingItem: item.item,
+                    })}
+                  >
+                    <Text style={s.foodItemName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={s.foodItemCal}>{item.cal} cal</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             );
           })}
@@ -514,6 +517,15 @@ const s = StyleSheet.create({
   addItemBtnText: { fontSize: 18, color: '#00E5A0', lineHeight: 22, fontWeight: '300' },
 
   emptyPeriod: { fontSize: 13, color: '#4A4A4A', paddingHorizontal: 16, paddingVertical: 14 },
+
+  emptyTodayCard: {
+    backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24,
+    alignItems: 'center', borderWidth: 1, borderColor: '#2A2A2A',
+    marginBottom: 10,
+  },
+  emptyTodayIcon: { fontSize: 36, marginBottom: 10 },
+  emptyTodayText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
+  emptyTodaySubText: { fontSize: 14, color: '#8A8A8A' },
 
   foodItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

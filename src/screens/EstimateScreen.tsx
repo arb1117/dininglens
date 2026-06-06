@@ -151,7 +151,7 @@ function getHistorySuggestions(mealLog: LoggedMeal[], query: string): HistorySug
 
 export default function EstimateScreen({ navigation, route }: Props) {
   const { addMeal, menuItems, venue, mealLog } = useMealContext();
-  const { analysisResult, imageBase64, source } = route.params;
+  const { analysisResult, imageBase64, source, analysisError } = route.params;
 
   const [items, setItems] = useState<NormalizedItem[]>(() =>
     buildInitialItems(analysisResult, menuItems)
@@ -395,6 +395,17 @@ export default function EstimateScreen({ navigation, route }: Props) {
             </View>
           )}
         </View>
+
+        {analysisError && (
+          <View style={styles.analysisErrorCard}>
+            <Text style={styles.analysisErrorText}>
+              Couldn't analyze this photo — check your connection and try again.
+            </Text>
+            <TouchableOpacity style={styles.retakeBtn} onPress={() => navigation.pop()}>
+              <Text style={styles.retakeBtnText}>Retake</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {imageQualityError && (
           <View style={styles.imageQualityBanner}>
@@ -708,6 +719,13 @@ const styles = StyleSheet.create({
 
   headerBack: { paddingRight: 16, paddingVertical: 4 },
   headerBackText: { color: '#FFFFFF', fontSize: 16 },
+
+  analysisErrorCard: {
+    backgroundColor: '#1A0A0A', borderWidth: 1, borderColor: '#FF4444',
+    borderRadius: 12, padding: 14, marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
+  analysisErrorText: { flex: 1, fontSize: 14, color: '#FF6B6B', fontWeight: '500' },
 
   imageQualityBanner: {
     backgroundColor: '#2A1500', borderWidth: 1, borderColor: '#FF9500',

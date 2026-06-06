@@ -52,6 +52,7 @@ export default function CameraScreen({ navigation, route }: Props) {
   );
   const [barcodeScanning, setBarcodeScanning] = useState(false);
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
+  const [barcodeNotFoundCode, setBarcodeNotFoundCode] = useState<string | null>(null);
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showEatingOutModal, setShowEatingOutModal] = useState(false);
   const [eatingOutMode, setEatingOutMode] = useState<EatingOutMode>('options');
@@ -168,6 +169,7 @@ export default function CameraScreen({ navigation, route }: Props) {
       setDiningHallStatus('active');
     } catch {
       setDiningHallStatus('inactive');
+      setErrorBanner("Couldn't load menu — using generic mode");
     }
   }
 
@@ -199,8 +201,7 @@ export default function CameraScreen({ navigation, route }: Props) {
       navigation.navigate('Estimate', { analysisResult: result, imageBase64 });
     } catch (err) {
       console.error('Shutter error:', err);
-      setErrorBanner('Estimate unavailable — using defaults');
-      navigation.navigate('Estimate', { analysisResult: undefined, imageBase64 });
+      navigation.navigate('Estimate', { analysisResult: undefined, imageBase64, analysisError: true });
     } finally {
       setAnalyzing(false);
     }
@@ -212,10 +213,12 @@ export default function CameraScreen({ navigation, route }: Props) {
     lastScanAt.current = now;
     setBarcodeScanning(true);
     setBarcodeError(null);
+    setBarcodeNotFoundCode(null);
     try {
       const res = await fetch(`${SERVER_URL}/barcode?code=${encodeURIComponent(data)}`);
       if (res.status === 404) {
-        setBarcodeError('Product not found — try scanning again');
+        setBarcodeError('Product not found — try searching manually');
+        setBarcodeNotFoundCode(data);
         setBarcodeScanning(false);
         return;
       }
@@ -270,8 +273,7 @@ export default function CameraScreen({ navigation, route }: Props) {
       const analysisResult = await analyzeImage(base64, isDiningHallMode ? menuItems : undefined);
       navigation.navigate('Estimate', { analysisResult, imageBase64: base64 });
     } catch {
-      setErrorBanner('Analysis failed — using defaults');
-      navigation.navigate('Estimate', { analysisResult: undefined, imageBase64: base64 });
+      navigation.navigate('Estimate', { analysisResult: undefined, imageBase64: base64, analysisError: true });
     } finally {
       setAnalyzing(false);
     }
@@ -420,7 +422,23 @@ export default function CameraScreen({ navigation, route }: Props) {
             <Text style={styles.barcodeScanText}>
               {barcodeScanning ? 'Looking up product…' : 'Point camera at barcode'}
             </Text>
-            {barcodeError && <Text style={styles.barcodeErrorText}>{barcodeError}</Text>}
+            {barcodeError && (
+              <View style={styles.barcodeErrorWrap}>
+                <Text style={styles.barcodeErrorText}>{barcodeError}</Text>
+                {barcodeNotFoundCode && (
+                  <TouchableOpacity
+                    style={styles.barcodeSearchBtn}
+                    onPress={() => {
+                      setBarcodeNotFoundCode(null);
+                      setBarcodeError(null);
+                      navigation.navigate('Search', { query: barcodeNotFoundCode });
+                    }}
+                  >
+                    <Text style={styles.barcodeSearchBtnText}>Search</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
             {barcodeScanning && <ActivityIndicator color="#00E5A0" style={{ marginTop: 8 }} />}
           </View>
         )}
@@ -918,13 +936,20 @@ const styles = StyleSheet.create({
     marginTop: 18,
     textAlign: 'center',
   },
+  barcodeErrorWrap: { alignItems: 'center', marginTop: 10, gap: 10 },
   barcodeErrorText: {
     color: '#FF9500',
     fontSize: 13,
-    marginTop: 8,
     textAlign: 'center',
     paddingHorizontal: 20,
   },
+  barcodeSearchBtn: {
+    backgroundColor: '#00E5A0',
+    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 9,
+  },
+  barcodeSearchBtnText: { color: '#0F0F0F', fontWeight: '700', fontSize: 14 },
 
   // Permission screen
   permissionScreen: {

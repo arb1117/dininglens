@@ -35,6 +35,7 @@ export type RootStackParamList = {
     analysisResult?: AnalysisResult;
     imageBase64?: string;
     source?: string;
+    analysisError?: boolean;
     addedItem?: { name: string; cal: number; protein: number; carbs: number; fat: number };
   };
   History: undefined;

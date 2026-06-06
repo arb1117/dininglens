@@ -482,6 +482,13 @@ export default function SearchScreen({ navigation, route }: Props) {
           ) : (
             <View style={s.emptyStateInline}>
               <Text style={s.emptyText}>No results for "{query}"</Text>
+              <Text style={s.emptySubText}>Try a different search</Text>
+              <TouchableOpacity
+                style={s.aiSuggestionBtn}
+                onPress={() => navigation.navigate('MainTabs', { screen: 'AICoach' })}
+              >
+                <Text style={s.aiSuggestionText}>Ask AI Coach instead →</Text>
+              </TouchableOpacity>
             </View>
           )
         }
@@ -839,5 +846,16 @@ const s = StyleSheet.create({
   },
 
   // Inline empty / loading state inside FlatList
-  emptyStateInline: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 60 },
+  emptyStateInline: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 60, gap: 10 },
+  emptySubText: { fontSize: 13, color: '#555', textAlign: 'center' },
+  aiSuggestionBtn: {
+    marginTop: 6,
+    backgroundColor: '#1A2A1A',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#00E5A0',
+  },
+  aiSuggestionText: { color: '#00E5A0', fontSize: 14, fontWeight: '600' },
 });

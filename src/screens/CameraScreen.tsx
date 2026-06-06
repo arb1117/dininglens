@@ -14,7 +14,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import { KNOWN_VENUES, detectVenue, Venue } from '../services/venueService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { KNOWN_VENUES, detectVenueFull, Venue } from '../services/venueService';
 import { fetchVenueMenu } from '../services/menuService';
 import { CHAIN_MENUS, getChainMenuItems } from '../data/chainMenus';
 import { analyzeImage } from '../services/visionService';
@@ -56,6 +57,7 @@ export default function CameraScreen({ navigation, route }: Props) {
   const [eatingOutMode, setEatingOutMode] = useState<EatingOutMode>('options');
   const [venueSearch, setVenueSearch] = useState('');
   const [detectingLocation, setDetectingLocation] = useState(false);
+  const [venueDistanceKm, setVenueDistanceKm] = useState<number | null>(null);
 
   const cameraRef = useRef<CameraView>(null);
   const lastScanAt = useRef<number>(0);
@@ -139,11 +141,11 @@ export default function CameraScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     if (route.params?.initialMode === 'dining') return; // handled above
-    detectVenue().then(detected => {
+    detectVenueFull().then(({ venue: detected, distanceKm }) => {
       if (!detected || diningHallStatus !== 'inactive') return;
+      setVenueDistanceKm(isFinite(distanceKm) ? distanceKm : null);
 
       if (detected.type === 'restaurant' && detected.menuItems?.length) {
-        // Restaurant with a known menu — load directly without a dineoncampus fetch
         setVenue(detected);
         setMenuItems(detected.menuItems);
         setPeriodLabel('Menu');
@@ -151,7 +153,6 @@ export default function CameraScreen({ navigation, route }: Props) {
       } else if (detected.type === 'dining_hall') {
         enableDiningHallModeForVenue(detected);
       }
-      // Restaurant with no menu → stay in generic mode (no banner)
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -285,9 +286,19 @@ export default function CameraScreen({ navigation, route }: Props) {
   async function handleUseLocation() {
     setDetectingLocation(true);
     try {
-      const detected = await detectVenue();
+      const { venue: detected, distanceKm, permissionDenied } = await detectVenueFull();
       closeEatingOutModal();
+      if (permissionDenied) {
+        const key = 'locationDeniedShown';
+        const already = await AsyncStorage.getItem(key).catch(() => null);
+        if (!already) {
+          await AsyncStorage.setItem(key, '1').catch(() => {});
+          setErrorBanner('Location access helps auto-detect nearby dining halls and restaurants');
+        }
+        return;
+      }
       if (!detected) { setErrorBanner('No venue found nearby'); return; }
+      setVenueDistanceKm(isFinite(distanceKm) ? distanceKm : null);
       if (detected.type === 'restaurant' && detected.menuItems?.length) {
         setVenue(detected);
         setMenuItems(detected.menuItems);
@@ -305,6 +316,7 @@ export default function CameraScreen({ navigation, route }: Props) {
 
   async function handleSelectVenue(result: VenueSearchResult) {
     closeEatingOutModal();
+    setVenueDistanceKm(null);
     if (result.type === 'dining_hall' && result.venueRef) {
       enableDiningHallModeForVenue(result.venueRef);
     } else if (result.chainName) {
@@ -366,7 +378,11 @@ export default function CameraScreen({ navigation, route }: Props) {
               onPress={disableDiningHallMode}
               activeOpacity={0.75}
             >
-              <Text style={styles.venuePillText}>📍 {venue.name}</Text>
+              <Text style={styles.venuePillText}>
+                📍 {venue.name}{venueDistanceKm != null
+                  ? ` · ${venueDistanceKm < 0.1 ? `${Math.round(venueDistanceKm * 1000)}m` : `${venueDistanceKm.toFixed(1)} km`}`
+                  : ''}
+              </Text>
             </TouchableOpacity>
           </View>
         )}

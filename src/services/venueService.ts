@@ -11,13 +11,21 @@ export type Venue = {
   locationId: string;
   provider: DiningProvider | 'generic';
   coords: Coords;
-  // Pre-fetched menu items for restaurant venues (chain lookup or scrape result)
   menuItems?: Array<{ id: string; name: string; calories: number; protein: number; carbs: number; fat: number }>;
 };
 
+export type VenueDetectionResult = {
+  venue: Venue | null;
+  distanceKm: number;
+  permissionDenied: boolean;
+};
+
 const DINING_HALL_RADIUS_KM = 0.25;
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 export const KNOWN_VENUES: Venue[] = SUPPORTED_DINING_VENUES;
+
+let venueCache: { venue: Venue | null; distanceKm: number; detectedAt: number } | null = null;
 
 function haversineKm(a: Coords, b: Coords): number {
   const R = 6371;
@@ -57,35 +65,75 @@ function findNearestDiningHall(coords: Coords): { venue: Venue | null; distanceK
   return { venue: nearestHall, distanceKm: nearestHallDist };
 }
 
-export async function detectVenue(): Promise<Venue | null> {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  if (status !== 'granted') return null;
+async function detectFromCoords(coords: Coords): Promise<{ venue: Venue | null; distanceKm: number }> {
+  const nearestHall = findNearestDiningHall(coords);
 
-  const location = await Location.getCurrentPositionAsync({});
-  const { latitude: lat, longitude: lon } = location.coords;
-  const userCoords = { lat, lon };
-
-  const nearestHall = findNearestDiningHall(userCoords);
-
-  // Check for a nearby restaurant via Google Places (requires GOOGLE_PLACES_API_KEY on server)
   try {
     const { detectNearbyRestaurant } = await import('./restaurantService');
-    const restaurant = await detectNearbyRestaurant(userCoords);
+    const restaurant = await detectNearbyRestaurant(coords);
     if (restaurant && restaurant.distance_km <= 0.1 && restaurant.distance_km < nearestHall.distanceKm) {
       return {
-        id: restaurant.id,
-        name: restaurant.name,
-        institution: restaurant.chain,
-        type: 'restaurant',
-        locationId: restaurant.id,
-        provider: 'generic',
-        coords: userCoords,
-        menuItems: restaurant.menuItems,
+        venue: {
+          id: restaurant.id,
+          name: restaurant.name,
+          institution: restaurant.chain,
+          type: 'restaurant',
+          locationId: restaurant.id,
+          provider: 'generic',
+          coords,
+          menuItems: restaurant.menuItems,
+        },
+        distanceKm: restaurant.distance_km,
       };
     }
   } catch {
     // continue with dining hall result
   }
 
-  return nearestHall.venue;
+  return { venue: nearestHall.venue, distanceKm: nearestHall.distanceKm };
+}
+
+export async function detectVenueFull(): Promise<VenueDetectionResult> {
+  // Return cached result if still fresh
+  if (venueCache && Date.now() - venueCache.detectedAt < CACHE_TTL_MS) {
+    return { venue: venueCache.venue, distanceKm: venueCache.distanceKm, permissionDenied: false };
+  }
+
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') {
+    return { venue: null, distanceKm: Infinity, permissionDenied: true };
+  }
+
+  // Fast path: use last known position (instant, no UI prompt)
+  const lastKnown = await Location.getLastKnownPositionAsync({}).catch(() => null);
+  if (lastKnown) {
+    const coords = { lat: lastKnown.coords.latitude, lon: lastKnown.coords.longitude };
+    const result = await detectFromCoords(coords);
+    venueCache = { ...result, detectedAt: Date.now() };
+
+    // Refine in background with accurate position; updates cache for next call
+    Location.getCurrentPositionAsync({}).then(async (loc) => {
+      const accurateCoords = { lat: loc.coords.latitude, lon: loc.coords.longitude };
+      const updated = await detectFromCoords(accurateCoords);
+      venueCache = { ...updated, detectedAt: Date.now() };
+    }).catch(() => {});
+
+    return { ...result, permissionDenied: false };
+  }
+
+  // No last known position — wait for accurate fix
+  const location = await Location.getCurrentPositionAsync({});
+  const coords = { lat: location.coords.latitude, lon: location.coords.longitude };
+  const result = await detectFromCoords(coords);
+  venueCache = { ...result, detectedAt: Date.now() };
+  return { ...result, permissionDenied: false };
+}
+
+export async function detectVenue(): Promise<Venue | null> {
+  const { venue } = await detectVenueFull();
+  return venue;
+}
+
+export function clearVenueCache(): void {
+  venueCache = null;
 }

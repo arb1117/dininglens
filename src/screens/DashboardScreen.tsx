@@ -230,10 +230,14 @@ function AddExerciseModal({ visible, onClose, onAdd }: ExerciseModalProps) {
           onPress={handleAdd}
           disabled={!name.trim() || estimating}
         >
-          {estimating
-            ? <ActivityIndicator color="#0F0F0F" />
-            : <Text style={em.addBtnText}>Log Exercise</Text>
-          }
+          {estimating ? (
+            <View style={em.estimatingRow}>
+              <ActivityIndicator color="#0F0F0F" size="small" />
+              <Text style={em.addBtnText}>Estimating calories...</Text>
+            </View>
+          ) : (
+            <Text style={em.addBtnText}>Log Exercise</Text>
+          )}
         </TouchableOpacity>
       </View>
     </Modal>
@@ -265,6 +269,7 @@ const em = StyleSheet.create({
   addBtn: { backgroundColor: '#00E5A0', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   addBtnDisabled: { opacity: 0.4 },
   addBtnText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
+  estimatingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 });
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────

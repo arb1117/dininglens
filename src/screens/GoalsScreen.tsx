@@ -408,6 +408,7 @@ export default function GoalsScreen({ navigation }: Props) {
   // ── Step 3 — Activity description ─────────────────────────────────────────────
   if (step === 'activity') {
     return (
+      <View style={{ flex: 1 }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
           <BackLink onPress={() => { setCalcError(null); setStep('profile'); }} />
@@ -462,6 +463,13 @@ export default function GoalsScreen({ navigation }: Props) {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+      {calculating && (
+        <View style={s.calcOverlay}>
+          <ActivityIndicator size="large" color="#00E5A0" />
+          <Text style={s.calcOverlayText}>Calculating your targets...</Text>
+        </View>
+      )}
+      </View>
     );
   }
 
@@ -681,4 +689,19 @@ const s = StyleSheet.create({
   // Manual step
   manualRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   manualLabel: { fontSize: 16, color: '#FFFFFF', fontWeight: '600', flex: 1 },
+
+  // Calculating overlay
+  calcOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15,15,15,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+  },
+  calcOverlayText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
 });

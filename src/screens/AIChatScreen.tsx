@@ -1,8 +1,8 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform,
-  ActivityIndicator,
+  ActivityIndicator, Animated,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
@@ -16,7 +16,33 @@ type Message = {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  isError?: boolean;
 };
+
+function TypingBubble() {
+  const dot1 = useRef(new Animated.Value(0.3)).current;
+  const dot2 = useRef(new Animated.Value(0.3)).current;
+  const dot3 = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const pulse = (dot: Animated.Value) =>
+      Animated.sequence([
+        Animated.timing(dot, { toValue: 1, duration: 280, useNativeDriver: true }),
+        Animated.timing(dot, { toValue: 0.3, duration: 280, useNativeDriver: true }),
+      ]);
+    const anim = Animated.loop(Animated.stagger(180, [pulse(dot1), pulse(dot2), pulse(dot3)]));
+    anim.start();
+    return () => anim.stop();
+  }, [dot1, dot2, dot3]);
+
+  return (
+    <View style={[bub.bubbleAI, bub.typingBubble]}>
+      <Animated.View style={[bub.typingDot, { opacity: dot1 }]} />
+      <Animated.View style={[bub.typingDot, { opacity: dot2 }]} />
+      <Animated.View style={[bub.typingDot, { opacity: dot3 }]} />
+    </View>
+  );
+}
 
 // Bold **text** → array of parts for rendering
 function parseBold(text: string): { bold: boolean; text: string }[] {
@@ -59,6 +85,30 @@ function BubbleText({ text }: { text: string }) {
 const bub = StyleSheet.create({
   text: { fontSize: 15, color: '#FFFFFF', lineHeight: 22 },
   bold: { fontWeight: '700', color: '#00E5A0' },
+  bubbleAI: {
+    backgroundColor: '#111',
+    alignSelf: 'flex-start',
+    borderLeftWidth: 3,
+    borderLeftColor: '#00E5A0',
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    padding: 14,
+    marginBottom: 10,
+    maxWidth: '85%',
+  },
+  typingBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  typingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#00E5A0',
+  },
 });
 
 export default function AIChatScreen() {
@@ -121,7 +171,7 @@ export default function AIChatScreen() {
       const reply: Message = { id: String(Date.now() + 1), role: 'assistant', text: data.reply ?? 'Sorry, I had trouble responding.' };
       setMessages(prev => [...prev, reply]);
     } catch {
-      const errMsg: Message = { id: String(Date.now() + 1), role: 'assistant', text: "Sorry, I couldn't connect right now. Try again in a moment." };
+      const errMsg: Message = { id: String(Date.now() + 1), role: 'assistant', text: "AI Coach is temporarily unavailable. Try again in a moment.", isError: true };
       setMessages(prev => [...prev, errMsg]);
     } finally {
       setLoading(false);
@@ -133,7 +183,7 @@ export default function AIChatScreen() {
     const isUser = item.role === 'user';
     const suggestions = isUser ? [] : extractFoodSuggestions(item.text);
     return (
-      <View style={[s.bubble, isUser ? s.bubbleUser : s.bubbleAI]}>
+      <View style={[s.bubble, isUser ? s.bubbleUser : (item.isError ? s.bubbleError : s.bubbleAI)]}>
         <BubbleText text={item.text} />
         {suggestions.length > 0 && (
           <View style={s.chips}>
@@ -172,14 +222,8 @@ export default function AIChatScreen() {
           style={s.list}
           contentContainerStyle={s.listContent}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          ListFooterComponent={loading ? <TypingBubble /> : null}
         />
-
-        {loading && (
-          <View style={s.typingRow}>
-            <ActivityIndicator size="small" color="#00E5A0" />
-            <Text style={s.typingText}>Thinking…</Text>
-          </View>
-        )}
 
         <View style={s.inputRow}>
           <TextInput
@@ -238,6 +282,14 @@ const s = StyleSheet.create({
     borderRadius: 18,
     borderBottomLeftRadius: 4,
   },
+  bubbleError: {
+    backgroundColor: '#1A0A0A',
+    alignSelf: 'flex-start',
+    borderLeftWidth: 3,
+    borderLeftColor: '#FF4444',
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+  },
 
   chips: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 8 },
   chip: {
@@ -249,9 +301,6 @@ const s = StyleSheet.create({
     borderColor: '#00E5A0',
   },
   chipText: { color: '#00E5A0', fontSize: 13, fontWeight: '600' },
-
-  typingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingVertical: 8 },
-  typingText: { fontSize: 13, color: '#8A8A8A' },
 
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10,

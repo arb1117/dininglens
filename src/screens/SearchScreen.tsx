@@ -434,6 +434,12 @@ export default function SearchScreen({ navigation, route }: Props) {
         ))}
       </ScrollView>
 
+      {loading && filter !== 'myfoods' && (
+        <View style={s.searchLoadingBar}>
+          <ActivityIndicator size="small" color="#00E5A0" />
+        </View>
+      )}
+
       <FlatList
         data={displayResults}
         keyExtractor={(_, i) => String(i)}
@@ -672,6 +678,10 @@ const s = StyleSheet.create({
   chipText: { fontSize: 14, fontWeight: '600', color: '#8A8A8A' },
   chipTextActive: { color: '#0F0F0F' },
 
+  searchLoadingBar: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
   loadingRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 20, paddingVertical: 12,

@@ -477,13 +477,21 @@ export default function CameraScreen({ navigation, route }: Props) {
           <Text style={styles.searchButtonText}>🔍</Text>
         </TouchableOpacity>
 
-        {/* Eating out? chip — bottom-left, when no venue detected */}
-        {diningHallStatus === 'inactive' && (
+        {/* Eating out? chip — bottom-left, when no venue detected or loading */}
+        {(diningHallStatus === 'inactive' || diningHallStatus === 'loading') && (
           <TouchableOpacity
             style={styles.eatingOutChip}
-            onPress={() => setShowEatingOutModal(true)}
+            onPress={() => diningHallStatus === 'inactive' && setShowEatingOutModal(true)}
+            disabled={diningHallStatus === 'loading'}
           >
-            <Text style={styles.eatingOutChipText}>🍽 Eating out?</Text>
+            {diningHallStatus === 'loading' ? (
+              <View style={styles.eatingOutLoadingRow}>
+                <ActivityIndicator size="small" color="rgba(255,255,255,0.9)" />
+                <Text style={styles.eatingOutChipText}>Loading menu...</Text>
+              </View>
+            ) : (
+              <Text style={styles.eatingOutChipText}>🍽 Eating out?</Text>
+            )}
           </TouchableOpacity>
         )}
 
@@ -739,6 +747,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
   },
   eatingOutChipText: { fontSize: 13, color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+  eatingOutLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 
   // Eating out modal
   eoBackdrop: {

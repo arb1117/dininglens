@@ -26,7 +26,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' })); // images are base64, need room
 
 const IS_PROD = process.env.NODE_ENV === 'production';
-const MAX_SCRAPE_BYTES = 1024 * 1024;
+const MAX_SCRAPE_BYTES = 512 * 1024; // 500KB
 
 app.use((req, res, next) => {
   req.requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;

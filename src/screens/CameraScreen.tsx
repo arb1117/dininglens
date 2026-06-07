@@ -44,6 +44,7 @@ export default function CameraScreen({ navigation, route }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [diningHallStatus, setDiningHallStatus] = useState<DiningHallStatus>('inactive');
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzingLabel, setAnalyzingLabel] = useState('Analyzing meal...');
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [torch, setTorch] = useState(false);
   const [scanMode, setScanMode] = useState<ScanMode>(
@@ -180,6 +181,11 @@ export default function CameraScreen({ navigation, route }: Props) {
   async function handleShutter() {
     if (!cameraRef.current || analyzing) return;
     setAnalyzing(true);
+    setAnalyzingLabel('Analyzing meal...');
+    const wakingTimer = setTimeout(
+      () => setAnalyzingLabel('Starting analysis server…\nThis may take up to 30 seconds.'),
+      6_000
+    );
     setErrorBanner(null);
     let imageBase64: string | undefined;
     try {
@@ -197,8 +203,10 @@ export default function CameraScreen({ navigation, route }: Props) {
         isDiningHallMode ? menuItems : undefined
       );
 
+      clearTimeout(wakingTimer);
       navigation.navigate('Estimate', { analysisResult: result, imageBase64 });
     } catch (err) {
+      clearTimeout(wakingTimer);
       console.error('Shutter error:', err);
       navigation.navigate('Estimate', { analysisResult: undefined, imageBase64, analysisError: true });
     } finally {
@@ -267,11 +275,18 @@ export default function CameraScreen({ navigation, route }: Props) {
       return;
     }
     setAnalyzing(true);
+    setAnalyzingLabel('Analyzing meal...');
+    const galleryWakingTimer = setTimeout(
+      () => setAnalyzingLabel('Starting analysis server…\nThis may take up to 30 seconds.'),
+      6_000
+    );
     setErrorBanner(null);
     try {
       const analysisResult = await analyzeImage(base64, isDiningHallMode ? menuItems : undefined);
+      clearTimeout(galleryWakingTimer);
       navigation.navigate('Estimate', { analysisResult, imageBase64: base64 });
     } catch {
+      clearTimeout(galleryWakingTimer);
       navigation.navigate('Estimate', { analysisResult: undefined, imageBase64: base64, analysisError: true });
     } finally {
       setAnalyzing(false);
@@ -410,7 +425,7 @@ export default function CameraScreen({ navigation, route }: Props) {
         {analyzing && (
           <View style={styles.analyzingOverlay}>
             <ActivityIndicator size="large" color="#fff" />
-            <Text style={styles.analyzingText}>Analyzing meal...</Text>
+            <Text style={[styles.analyzingText, { textAlign: 'center' }]}>{analyzingLabel}</Text>
           </View>
         )}
 

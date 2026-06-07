@@ -10,6 +10,8 @@ import { useMealContext, periodFromTimestamp } from '../context/MealContext';
 import type { ExerciseEntry, MacroItem, MealPeriod } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
 import { API_BASE_URL } from '../config/api';
+import { useBackendHealth } from '../hooks/useBackendHealth';
+import type { HealthStatus } from '../hooks/useBackendHealth';
 
 const PERIOD_ORDER: MealPeriod[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
 const PERIOD_LABELS: Record<MealPeriod, string> = {
@@ -271,6 +273,47 @@ const em = StyleSheet.create({
   estimatingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 });
 
+// ─── Backend Status Banner ────────────────────────────────────────────────────
+
+function BackendBanner({ status, onRetry }: { status: HealthStatus; onRetry: () => void }) {
+  if (status === 'ok' || status === 'checking') return null;
+  const isWaking = status === 'waking';
+  return (
+    <View style={banner.bar}>
+      {isWaking ? (
+        <ActivityIndicator size="small" color="#FF9500" style={banner.icon} />
+      ) : (
+        <Text style={banner.icon}>⚠️</Text>
+      )}
+      <Text style={banner.text} numberOfLines={2}>
+        {isWaking
+          ? 'Starting analysis server — first scan may be slow…'
+          : 'Having trouble reaching the analysis server.'}
+      </Text>
+      {!isWaking && (
+        <TouchableOpacity onPress={onRetry} style={banner.retryBtn}>
+          <Text style={banner.retryText}>Retry</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+const banner = StyleSheet.create({
+  bar: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#2A1F00', borderBottomWidth: 1, borderColor: '#4A3800',
+    paddingHorizontal: 16, paddingVertical: 10, gap: 10,
+  },
+  icon: { fontSize: 16 },
+  text: { flex: 1, fontSize: 13, color: '#FFB800', lineHeight: 18 },
+  retryBtn: {
+    paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: '#3A2D00', borderRadius: 8,
+  },
+  retryText: { fontSize: 13, fontWeight: '700', color: '#FFB800' },
+});
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
@@ -284,6 +327,8 @@ export default function DashboardScreen() {
     addExercise,
     totalBurned,
   } = useMealContext();
+
+  const { status: backendStatus, retry: retryBackend } = useBackendHealth();
 
   const today = new Date().toDateString();
 
@@ -339,6 +384,7 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={s.safeArea}>
+      <BackendBanner status={backendStatus} onRetry={retryBackend} />
       <ScrollView style={s.scroll} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
 
         {/* Header */}

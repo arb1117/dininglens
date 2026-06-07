@@ -567,6 +567,13 @@ export default function EstimateScreen({ navigation, route }: Props) {
                   {/* Calories — prominent */}
                   <Text style={styles.itemCalories}>{scaled.cal} cal</Text>
 
+                  {/* Serving summary */}
+                  <Text style={styles.servingSummary}>
+                    {portion === 'medium'
+                      ? 'Typical portion (×1.0)'
+                      : `${VISUAL_LABELS[portion].label} portion (×${VISUAL_MULTIPLIERS[portion]})`}
+                  </Text>
+
                   {/* Macros — secondary */}
                   <Text style={styles.itemMacros}>
                     {scaled.protein}g protein · {scaled.carbs}g carbs · {scaled.fat}g fat
@@ -881,7 +888,8 @@ const styles = StyleSheet.create({
   vpLabelActive: { color: '#0F0F0F' },
 
   // Calories + macros display
-  itemCalories: { fontSize: 28, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
+  itemCalories: { fontSize: 28, fontWeight: '800', color: '#FFFFFF', marginBottom: 2 },
+  servingSummary: { fontSize: 11, color: '#555', marginBottom: 4, fontStyle: 'italic' },
   itemMacros: { fontSize: 13, color: '#8A8A8A' },
 
   // Confidence (kept for backward compat, unused)

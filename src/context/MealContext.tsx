@@ -83,6 +83,7 @@ type MealContextType = {
   exerciseLog: ExerciseEntry[];
   addExercise: (entry: Omit<ExerciseEntry, 'id'>) => void;
   totalBurned: number;
+  resetDayStats: () => void;
 };
 
 const MealContext = createContext<MealContextType>({
@@ -104,6 +105,7 @@ const MealContext = createContext<MealContextType>({
   exerciseLog: [],
   addExercise: () => {},
   totalBurned: 0,
+  resetDayStats: () => {},
 });
 
 export function MealProvider({ children }: { children: ReactNode }) {
@@ -187,20 +189,23 @@ export function MealProvider({ children }: { children: ReactNode }) {
 
   function deleteMealItem(mealId: string, itemIndex: number) {
     setMealLog(prev => {
-      const next = prev.map(meal => {
-        if (meal.id !== mealId) return meal;
-        const newItems = meal.items.filter((_, i) => i !== itemIndex);
-        const totals = newItems.reduce(
-          (acc, item) => ({
-            cal: Math.round(acc.cal + item.cal),
-            protein: round1(acc.protein + item.protein),
-            carbs: round1(acc.carbs + item.carbs),
-            fat: round1(acc.fat + item.fat),
-          }),
-          { cal: 0, protein: 0, carbs: 0, fat: 0 }
-        );
-        return { ...meal, items: newItems, totals };
-      });
+      const next = prev
+        .map(meal => {
+          if (meal.id !== mealId) return meal;
+          const newItems = meal.items.filter((_, i) => i !== itemIndex);
+          if (newItems.length === 0) return null;
+          const totals = newItems.reduce(
+            (acc, item) => ({
+              cal: Math.round(acc.cal + item.cal),
+              protein: round1(acc.protein + item.protein),
+              carbs: round1(acc.carbs + item.carbs),
+              fat: round1(acc.fat + item.fat),
+            }),
+            { cal: 0, protein: 0, carbs: 0, fat: 0 }
+          );
+          return { ...meal, items: newItems, totals };
+        })
+        .filter((m): m is LoggedMeal => m !== null);
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
       return next;
     });
@@ -221,6 +226,13 @@ export function MealProvider({ children }: { children: ReactNode }) {
       AsyncStorage.setItem(exerciseKey, JSON.stringify(next)).catch(() => {});
       return next;
     });
+  }
+
+  function resetDayStats() {
+    setWaterCups(0);
+    setExerciseLog([]);
+    AsyncStorage.removeItem(waterKey).catch(() => {});
+    AsyncStorage.removeItem(exerciseKey).catch(() => {});
   }
 
   const totalBurned = exerciseLog.reduce((a, e) => a + e.caloriesBurned, 0);
@@ -246,6 +258,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
         exerciseLog,
         addExercise,
         totalBurned,
+        resetDayStats,
       }}
     >
       {children}

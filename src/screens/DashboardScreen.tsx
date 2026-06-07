@@ -574,7 +574,7 @@ const s = StyleSheet.create({
   },
   addItemBtnText: { fontSize: 18, color: '#00E5A0', lineHeight: 22, fontWeight: '300' },
 
-  emptyPeriod: { fontSize: 13, color: '#4A4A4A', paddingHorizontal: 16, paddingVertical: 14 },
+  emptyPeriod: { fontSize: 13, color: '#8A8A8A', paddingHorizontal: 16, paddingVertical: 14 },
 
   emptyTodayCard: {
     backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24,
@@ -622,5 +622,5 @@ const s = StyleSheet.create({
   exerciseName: { fontSize: 14, color: '#FFFFFF', fontWeight: '600', marginBottom: 2 },
   exerciseDetail: { fontSize: 12, color: '#8A8A8A' },
 
-  microsEmpty: { fontSize: 13, color: '#4A4A4A', marginTop: 12, lineHeight: 18 },
+  microsEmpty: { fontSize: 13, color: '#555', marginTop: 12, lineHeight: 18 },
 });

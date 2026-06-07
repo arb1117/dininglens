@@ -1,6 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
@@ -16,7 +15,7 @@ const PRESET_LABELS: Record<string, string> = {
 
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const { goals, mealLog, deleteMeal } = useMealContext();
+  const { goals, mealLog, deleteMeal, resetDayStats } = useMealContext();
   const debugTaps = useRef(0);
   const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -55,9 +54,7 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: () => {
             todayMeals.forEach(m => deleteMeal(m.id));
-            const today = new Date().toDateString();
-            AsyncStorage.removeItem(`@dininglens_water_${today}`).catch(() => {});
-            AsyncStorage.removeItem(`@dininglens_exercise_${today}`).catch(() => {});
+            resetDayStats();
           },
         },
       ]
@@ -201,5 +198,5 @@ const s = StyleSheet.create({
   },
   hkNoticeText: { fontSize: 12, color: '#555', lineHeight: 18 },
 
-  version: { fontSize: 12, color: '#333', textAlign: 'center', marginTop: 32 },
+  version: { fontSize: 12, color: '#555', textAlign: 'center', marginTop: 32 },
 });

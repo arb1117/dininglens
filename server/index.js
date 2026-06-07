@@ -68,6 +68,53 @@ function sendServerError(res, publicMessage = 'Something went wrong') {
   return res.status(500).json({ error: publicMessage });
 }
 
+const { z } = require('zod');
+
+function validate(schema, body, res) {
+  const result = schema.safeParse(body);
+  if (!result.success) {
+    res.status(400).json({ error: 'Invalid request', details: result.error.issues.map(i => i.message) });
+    return null;
+  }
+  return result.data;
+}
+
+const analyzeSchema = z.object({
+  imageBase64: z.string().min(100).max(15_000_000),
+  menuItems: z.array(z.object({
+    name: z.string(), calories: z.number(), protein: z.number(), carbs: z.number(), fat: z.number(),
+  })).optional(),
+});
+
+const reanalyzeSchema = analyzeSchema.extend({
+  feedback: z.string().max(500).optional(),
+  previousItems: z.array(z.any()).optional(),
+});
+
+const chatSchema = z.object({
+  message: z.string().min(1).max(2000),
+  context: z.object({ todayLog: z.any(), goals: z.any(), streak: z.number().optional() }).optional(),
+  history: z.array(z.any()).max(20).optional(),
+});
+
+const tdeeSchema = z.object({
+  height_cm: z.number().min(50).max(300),
+  weight_kg: z.number().min(20).max(500),
+  age: z.number().min(10).max(120),
+  sex: z.enum(['male', 'female']),
+  goal: z.enum(['lose', 'maintain', 'build']),
+  activityDescription: z.string().max(1000).optional(),
+});
+
+const searchSchema = z.object({ q: z.string().min(1).max(200) });
+
+const barcodeSchema = z.object({ code: z.string().min(1).max(50) });
+
+const interpretSchema = z.object({
+  foodName: z.string().min(1).max(200),
+  description: z.string().min(1).max(500),
+});
+
 if (!process.env.ANTHROPIC_API_KEY) {
   console.error('ERROR: ANTHROPIC_API_KEY is not set.');
   process.exit(1);
@@ -325,12 +372,9 @@ const SUPPLEMENT_GUIDANCE = `For supplements, protein powders, fiber supplements
 
 app.post('/analyze', aiLimiter, async (req, res) => {
   console.log('[/analyze] request received');
-  const { imageBase64, menuItems } = req.body;
-
-  if (!imageBase64) {
-    console.error('[/analyze] Missing imageBase64');
-    return res.status(400).json({ error: 'imageBase64 is required' });
-  }
+  const body = validate(analyzeSchema, req.body, res);
+  if (!body) return;
+  const { imageBase64, menuItems } = body;
   logDebug(`[/analyze] imageBase64 length: ${imageBase64.length}, menuItems: ${menuItems?.length ?? 0}`);
 
   let prompt;
@@ -441,11 +485,10 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
 
 app.post('/reanalyze', aiLimiter, async (req, res) => {
   console.log('[/reanalyze] request received');
-  const { imageBase64, feedback, previousItems, menuItems } = req.body;
-  logDebug(`[/reanalyze] imageBase64 length: ${imageBase64?.length ?? 'MISSING'}, previousItems: ${previousItems?.length ?? 0}`);
-
-  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
-  if (!feedback)    return res.status(400).json({ error: 'feedback is required' });
+  const body = validate(reanalyzeSchema, req.body, res);
+  if (!body) return;
+  const { imageBase64, feedback, previousItems, menuItems } = body;
+  logDebug(`[/reanalyze] imageBase64 length: ${imageBase64.length}, previousItems: ${previousItems?.length ?? 0}`);
 
   const previousList = Array.isArray(previousItems) && previousItems.length > 0
     ? previousItems.map(i => i.name).join(', ')
@@ -614,8 +657,9 @@ app.post('/lookup', aiLimiter, async (req, res) => {
 
 app.get('/search', aiLimiter, async (req, res) => {
   console.log('[/search] request received');
-  const q = req.query.q;
-  if (!q) return res.status(400).json({ error: 'q is required' });
+  const params = validate(searchSchema, req.query, res);
+  if (!params) return;
+  const { q } = params;
   console.log(`[/search] query: "${q}"`);
 
   const [offResults, usdaResults] = await Promise.all([
@@ -794,8 +838,9 @@ app.post('/scrape-menu', scrapeLimiter, async (req, res) => {
 
 app.get('/barcode', async (req, res) => {
   console.log('[/barcode] request received');
-  const code = req.query.code;
-  if (!code) return res.status(400).json({ error: 'code is required' });
+  const params = validate(barcodeSchema, req.query, res);
+  if (!params) return;
+  const { code } = params;
 
   try {
     const url = `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(code)}.json`;
@@ -878,8 +923,9 @@ Never be preachy or guilt-trip about food choices.`;
 
 app.post('/chat', aiLimiter, async (req, res) => {
   console.log('[/chat] request received');
-  const { message, context, history } = req.body;
-  if (!message) return res.status(400).json({ error: 'message required' });
+  const body = validate(chatSchema, req.body, res);
+  if (!body) return;
+  const { message, context, history } = body;
 
   const contextBlock = context ? `\n\nUser context:\n- Today: ${context.todayLog?.meals ?? 0} meals logged, ${Math.round(context.todayLog?.totals?.cal ?? 0)} cal eaten\n- Goals: ${context.goals?.calories ?? '?'} cal, ${context.goals?.protein ?? '?'}g protein\n- Water: ${context.water?.ounces ?? 0} oz (${context.water?.cups ?? 0} cups)\n- Exercise: ${context.exercise?.totalBurned ?? 0} cal burned across ${context.exercise?.entries ?? 0} entries\n- Streak: ${context.streak ?? 0} days` : '';
 
@@ -909,10 +955,9 @@ app.post('/chat', aiLimiter, async (req, res) => {
 
 app.post('/calculate-tdee', aiLimiter, async (req, res) => {
   console.log('[/calculate-tdee] request received');
-  const { height_cm, weight_kg, age, sex, goal, activityDescription } = req.body;
-  if (!height_cm || !weight_kg || !age || !sex || !goal) {
-    return res.status(400).json({ error: 'height_cm, weight_kg, age, sex, goal required' });
-  }
+  const body = validate(tdeeSchema, req.body, res);
+  if (!body) return;
+  const { height_cm, weight_kg, age, sex, goal, activityDescription } = body;
 
   // Mifflin-St Jeor BMR (metric)
   const bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) + (sex === 'male' ? 5 : -161);
@@ -963,10 +1008,10 @@ app.post('/calculate-tdee', aiLimiter, async (req, res) => {
 // ─── /interpret-quantity ─────────────────────────────────────────────────────
 
 app.post('/interpret-quantity', aiLimiter, async (req, res) => {
-  const { foodName, description, servingSize, caloriesPerServing } = req.body;
-  if (!foodName || !description) {
-    return res.status(400).json({ error: 'foodName and description required' });
-  }
+  const body = validate(interpretSchema, req.body, res);
+  if (!body) return;
+  const { foodName, description } = body;
+  const { servingSize, caloriesPerServing } = req.body;
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',

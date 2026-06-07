@@ -416,8 +416,21 @@ export default function DashboardScreen() {
           {todayMeals.length === 0 ? (
             <View style={s.emptyTodayCard}>
               <Text style={s.emptyTodayIcon}>🍽</Text>
-              <Text style={s.emptyTodayText}>Nothing logged yet today.</Text>
-              <Text style={s.emptyTodaySubText}>Tap + to add your first meal.</Text>
+              <Text style={s.emptyTodayText}>Nothing logged yet today</Text>
+              <Text style={s.emptyTodaySubText}>
+                Your goal is {goals.calories} cal · {goals.protein}g protein
+              </Text>
+              <View style={s.emptyQuickRow}>
+                {PERIOD_ORDER.map(p => (
+                  <TouchableOpacity
+                    key={p}
+                    style={s.emptyQuickBtn}
+                    onPress={() => navigation.navigate('Search', { period: p })}
+                  >
+                    <Text style={s.emptyQuickBtnText}>+ {PERIOD_LABELS[p]}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           ) : PERIOD_ORDER.map(period => {
             const items = mealsByPeriod[period];
@@ -570,7 +583,13 @@ const s = StyleSheet.create({
   },
   emptyTodayIcon: { fontSize: 36, marginBottom: 10 },
   emptyTodayText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
-  emptyTodaySubText: { fontSize: 14, color: '#8A8A8A' },
+  emptyTodaySubText: { fontSize: 13, color: '#8A8A8A', marginBottom: 16 },
+  emptyQuickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  emptyQuickBtn: {
+    backgroundColor: '#2A2A2A', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8,
+  },
+  emptyQuickBtnText: { fontSize: 13, color: '#00E5A0', fontWeight: '600' },
 
   foodItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

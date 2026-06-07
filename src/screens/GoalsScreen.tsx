@@ -316,6 +316,10 @@ export default function GoalsScreen({ navigation }: Props) {
           <TouchableOpacity style={s.primaryBtn} onPress={() => setStep('profile')}>
             <Text style={s.primaryBtnText}>Continue →</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity style={s.skipLink} onPress={saveManual}>
+            <Text style={s.skipLinkText}>Skip for now — use default targets</Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     );

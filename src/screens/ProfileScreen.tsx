@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
@@ -15,7 +16,7 @@ const PRESET_LABELS: Record<string, string> = {
 
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const { goals, mealLog } = useMealContext();
+  const { goals, mealLog, deleteMeal } = useMealContext();
   const debugTaps = useRef(0);
   const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -37,6 +38,31 @@ export default function ProfileScreen() {
     while (dates.has(d.toDateString())) { count++; d.setDate(d.getDate() - 1); }
     return count;
   }, [mealLog]);
+
+  const todayMeals = React.useMemo(() => {
+    const today = new Date().toDateString();
+    return mealLog.filter(m => new Date(m.timestamp).toDateString() === today);
+  }, [mealLog]);
+
+  function resetToday() {
+    Alert.alert(
+      'Reset Today\'s Log',
+      `Delete all ${todayMeals.length} meal${todayMeals.length === 1 ? '' : 's'} logged today?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: () => {
+            todayMeals.forEach(m => deleteMeal(m.id));
+            const today = new Date().toDateString();
+            AsyncStorage.removeItem(`@dininglens_water_${today}`).catch(() => {});
+            AsyncStorage.removeItem(`@dininglens_exercise_${today}`).catch(() => {});
+          },
+        },
+      ]
+    );
+  }
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
@@ -78,10 +104,41 @@ export default function ProfileScreen() {
         </Text>
       </View>
 
+      {/* Stats */}
+      <View style={s.card}>
+        <Text style={s.cardTitle}>All Time</Text>
+        <View style={s.statsRow}>
+          <View style={s.statItem}>
+            <Text style={s.statVal}>{mealLog.length}</Text>
+            <Text style={s.statLbl}>meals logged</Text>
+          </View>
+          <View style={s.statItem}>
+            <Text style={s.statVal}>{todayMeals.length}</Text>
+            <Text style={s.statLbl}>today</Text>
+          </View>
+          <View style={s.statItem}>
+            <Text style={s.statVal}>{streak}</Text>
+            <Text style={s.statLbl}>day streak</Text>
+          </View>
+        </View>
+        {todayMeals.length > 0 && (
+          <TouchableOpacity style={s.resetBtn} onPress={resetToday}>
+            <Text style={s.resetBtnText}>Reset today's log</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* History */}
       <TouchableOpacity style={s.historyBtn} onPress={() => navigation.navigate('History')}>
         <Text style={s.historyBtnText}>📋  View Meal History</Text>
       </TouchableOpacity>
+
+      {/* HealthKit notice */}
+      <View style={s.hkNotice}>
+        <Text style={s.hkNoticeText}>
+          HealthKit integration is not active in this beta. Exercise calorie burns are AI estimates only.
+        </Text>
+      </View>
 
       {/* Version — tap 5× to open debug screen */}
       <TouchableOpacity onPress={handleVersionTap} hitSlop={{ top: 12, bottom: 12, left: 20, right: 20 }}>
@@ -127,6 +184,22 @@ const s = StyleSheet.create({
     alignItems: 'center', borderWidth: 1, borderColor: '#2A2A2A',
   },
   historyBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+
+  statsRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  statItem: { alignItems: 'center' },
+  statVal: { fontSize: 28, fontWeight: '900', color: '#FFFFFF' },
+  statLbl: { fontSize: 11, color: '#8A8A8A', marginTop: 2 },
+  resetBtn: {
+    marginTop: 14, paddingVertical: 10, alignItems: 'center',
+    borderRadius: 8, borderWidth: 1, borderColor: '#3A1A1A',
+  },
+  resetBtnText: { color: '#FF6B6B', fontSize: 13, fontWeight: '600' },
+
+  hkNotice: {
+    marginTop: 16, backgroundColor: '#1A1A1A', borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  hkNoticeText: { fontSize: 12, color: '#555', lineHeight: 18 },
 
   version: { fontSize: 12, color: '#333', textAlign: 'center', marginTop: 32 },
 });

@@ -32,7 +32,11 @@ function MealCard({ meal, onEditItem, onDelete, onLogAgain, onRemoveItem }: Meal
     >
       <View style={styles.cardHeader}>
         <View style={styles.cardHeaderLeft}>
-          <Text style={styles.timestamp}>{meal.timestamp}</Text>
+          <Text style={styles.timestamp}>
+            {new Date(meal.timestamp).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+            {' · '}
+            {new Date(meal.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+          </Text>
           <Text style={styles.itemCount}>{meal.items.length} item{meal.items.length !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.cardActions}>
@@ -159,7 +163,9 @@ export default function HistoryScreen({ navigation }: Props) {
       <Text style={styles.header}>Meal History</Text>
       {mealLog.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyText}>No meals logged yet.</Text>
+          <Text style={styles.emptyIcon}>📋</Text>
+          <Text style={styles.emptyText}>No meals logged yet</Text>
+          <Text style={styles.emptySubText}>Log your first meal from the Dashboard or Camera tab.</Text>
         </View>
       ) : (
         <FlatList
@@ -191,8 +197,10 @@ const styles = StyleSheet.create({
   },
   toastText: { color: '#0F0F0F', fontWeight: '700', fontSize: 15 },
 
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { fontSize: 16, color: '#8A8A8A' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 10 },
+  emptyIcon: { fontSize: 48, marginBottom: 8 },
+  emptyText: { fontSize: 18, color: '#FFFFFF', fontWeight: '700', textAlign: 'center' },
+  emptySubText: { fontSize: 14, color: '#8A8A8A', textAlign: 'center', lineHeight: 20 },
 
   list: { paddingBottom: 20 },
 

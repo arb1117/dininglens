@@ -7,7 +7,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_PROXY_URL": "https://replace-with-your-dininglens-api.example.com"
+        "EXPO_PUBLIC_PROXY_URL": "https://dininglens-api.onrender.com"
       }
     },
     "preview": {
@@ -16,13 +16,13 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_PROXY_URL": "https://replace-with-your-dininglens-api.example.com"
+        "EXPO_PUBLIC_PROXY_URL": "https://dininglens-api.onrender.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_PROXY_URL": "https://replace-with-your-dininglens-api.example.com"
+        "EXPO_PUBLIC_PROXY_URL": "https://dininglens-api.onrender.com"
       }
     }
   },

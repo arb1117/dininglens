@@ -8,6 +8,8 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.dininglens.app",
+      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "DiningLens uses the camera to photograph meals and scan barcodes.",
         "NSLocationWhenInUseUsageDescription": "DiningLens uses your location to detect nearby dining halls and restaurants for more accurate meal estimates.",
@@ -15,6 +17,7 @@
       }
     },
     "android": {
+      "package": "com.dininglens.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

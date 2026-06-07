@@ -16,6 +16,7 @@ import CameraScreen from './src/screens/CameraScreen';
 import EstimateScreen from './src/screens/EstimateScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SearchScreen from './src/screens/SearchScreen';
+import DebugScreen from './src/screens/DebugScreen';
 import { AnalysisResult } from './src/services/visionService';
 
 export type TabParamList = {
@@ -29,6 +30,7 @@ export type RootStackParamList = {
   Permissions: undefined;
   Onboarding:  undefined;
   Goals:       undefined;
+  Debug:       undefined;
   MainTabs:    NavigatorScreenParams<TabParamList> | undefined;
   Camera:      { initialMode?: 'barcode' | 'dining' | 'gallery' } | undefined;
   Estimate: {
@@ -96,6 +98,7 @@ export default function App() {
             <Stack.Screen name="Estimate"    component={EstimateScreen}    options={{ title: 'Meal Estimate' }} />
             <Stack.Screen name="History"     component={HistoryScreen}     options={{ title: 'Meal History' }} />
             <Stack.Screen name="Search"      component={SearchScreen}      options={{ title: 'Food Search' }} />
+            <Stack.Screen name="Debug"       component={DebugScreen}       options={{ headerShown: false }} />
           </Stack.Navigator>
         </NavigationContainer>
       </MealProvider>

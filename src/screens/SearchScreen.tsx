@@ -628,8 +628,8 @@ export default function SearchScreen({ navigation, route }: Props) {
               <Text style={s.nlExplanationText}>{nlExplanation}</Text>
             ) : null}
 
-            {/* ── Period picker ──────────────────────────────────────── */}
-            {!editMode && !periodLocked && (
+            {/* ── Period picker — always shown so user can change before logging ── */}
+            {!editMode && (
               <View style={s.periodPickerRow}>
                 {(['breakfast', 'lunch', 'dinner', 'snacks'] as MealPeriod[]).map(p => (
                   <TouchableOpacity
@@ -652,11 +652,7 @@ export default function SearchScreen({ navigation, route }: Props) {
             ) : (
               <>
                 <TouchableOpacity style={s.logBtn} onPress={handleLogIt}>
-                  <Text style={s.logBtnText}>
-                    {periodLocked
-                      ? `Log to ${PERIOD_LABELS[pickedPeriod]}`
-                      : `Log · ${PERIOD_LABELS[pickedPeriod]}`}
-                  </Text>
+                  <Text style={s.logBtnText}>Log to {PERIOD_LABELS[pickedPeriod]}</Text>
                 </TouchableOpacity>
                 {isEstimate && (
                   <TouchableOpacity style={s.addBtn} onPress={handleAddToMeal}>

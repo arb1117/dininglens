@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
+
+const APP_VERSION = '1.0.0-beta';
 
 const PRESET_LABELS: Record<string, string> = {
   lose:     '🔥 Lose Weight',
@@ -14,6 +16,18 @@ const PRESET_LABELS: Record<string, string> = {
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { goals, mealLog } = useMealContext();
+  const debugTaps = useRef(0);
+  const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleVersionTap() {
+    debugTaps.current += 1;
+    if (debugTimer.current) clearTimeout(debugTimer.current);
+    debugTimer.current = setTimeout(() => { debugTaps.current = 0; }, 2000);
+    if (debugTaps.current >= 5) {
+      debugTaps.current = 0;
+      navigation.navigate('Debug');
+    }
+  }
 
   const streak = React.useMemo(() => {
     const dates = new Set(mealLog.map(m => new Date(m.timestamp).toDateString()));
@@ -68,6 +82,11 @@ export default function ProfileScreen() {
       <TouchableOpacity style={s.historyBtn} onPress={() => navigation.navigate('History')}>
         <Text style={s.historyBtnText}>📋  View Meal History</Text>
       </TouchableOpacity>
+
+      {/* Version — tap 5× to open debug screen */}
+      <TouchableOpacity onPress={handleVersionTap} hitSlop={{ top: 12, bottom: 12, left: 20, right: 20 }}>
+        <Text style={s.version}>DiningLens {APP_VERSION}</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -108,4 +127,6 @@ const s = StyleSheet.create({
     alignItems: 'center', borderWidth: 1, borderColor: '#2A2A2A',
   },
   historyBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+
+  version: { fontSize: 12, color: '#333', textAlign: 'center', marginTop: 32 },
 });

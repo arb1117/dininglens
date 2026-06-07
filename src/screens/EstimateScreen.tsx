@@ -10,8 +10,7 @@ import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem, LoggedMeal, MealPeriod, autoDetectPeriod } from '../context/MealContext';
 import { MenuItem } from '../services/menuService';
 import { AnalysisResult } from '../services/visionService';
-
-const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
+import { API_BASE_URL } from '../config/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estimate'>;
 
@@ -81,20 +80,24 @@ const SOURCE_BADGE: Record<ItemSource, string> = {
   manual: '🔍 Manually added',
 };
 
+const EMPTY_ANALYSIS_REASONS = new Set([
+  'image_quality',
+  'low_confidence',
+  'no_food',
+  'parse_error',
+  'timeout',
+]);
+
 function buildInitialItems(
   analysisResult: Props['route']['params']['analysisResult'],
   menuItems: ReturnType<typeof useMealContext>['menuItems'],
   routeSource?: string
 ): NormalizedItem[] {
-  if (
-    analysisResult?.reason === 'image_quality' ||
-    analysisResult?.reason === 'low_confidence' ||
-    analysisResult?.reason === 'no_food'
-  ) {
+  if (analysisResult?.reason && EMPTY_ANALYSIS_REASONS.has(analysisResult.reason)) {
     return [];
   }
 
-  if (!analysisResult || analysisResult.detectedItems.length === 0) {
+  if (!analysisResult) {
     return menuItems.slice(0, 3).map((item, i) => ({
       id: item.id ?? `fallback-${i}`,
       name: item.name,
@@ -270,7 +273,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
     setLookupLoading(true);
     setLookupError(null);
     try {
-      const res = await fetch(`${SERVER_URL}/lookup`, {
+      const res = await fetch(`${API_BASE_URL}/lookup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: searchQuery.trim() }),
@@ -339,7 +342,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
     setReanalyzing(true);
     setReanalyzeError(null);
     try {
-      const res = await fetch(`${SERVER_URL}/reanalyze`, {
+      const res = await fetch(`${API_BASE_URL}/reanalyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -398,9 +401,13 @@ export default function EstimateScreen({ navigation, route }: Props) {
     analysisResult?.reason === 'image_quality' || analysisResult?.reason === 'low_confidence'
   );
   const noFoodError = !hasReanalyzed && analysisResult?.reason === 'no_food';
+  const timeoutError = !hasReanalyzed && analysisResult?.reason === 'timeout';
+  const parseError = !hasReanalyzed && analysisResult?.reason === 'parse_error';
   const isFallback = !hasReanalyzed && !imageQualityError &&
-    !noFoodError && (!analysisResult || analysisResult.detectedItems.length === 0);
-  const sectionTitle = noFoodError ? 'No Food Detected' : isFallback ? 'Menu Items' : 'What you ate';
+    !noFoodError && !timeoutError && !parseError && !analysisResult;
+  const sectionTitle = noFoodError ? 'No Food Detected' :
+    (timeoutError || parseError) ? 'Analysis Failed' :
+    isFallback ? 'Menu Items' : 'What you ate';
 
   return (
     <>
@@ -448,7 +455,29 @@ export default function EstimateScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        {venue && !isFallback && !imageQualityError && !noFoodError && (
+        {timeoutError && (
+          <View style={styles.imageQualityBanner}>
+            <Text style={styles.imageQualityText}>
+              Analysis timed out — check your connection and try again
+            </Text>
+            <TouchableOpacity style={styles.retakeBtn} onPress={() => navigation.pop()}>
+              <Text style={styles.retakeBtnText}>Retake</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {parseError && (
+          <View style={styles.imageQualityBanner}>
+            <Text style={styles.imageQualityText}>
+              Couldn't read the AI response — try again
+            </Text>
+            <TouchableOpacity style={styles.retakeBtn} onPress={() => navigation.pop()}>
+              <Text style={styles.retakeBtnText}>Retake</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {venue && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && (
           <View style={styles.venueCard}>
             <Text style={styles.venueCardText}>
               {'✓ Matched to '}
@@ -469,7 +498,9 @@ export default function EstimateScreen({ navigation, route }: Props) {
         {items.length === 0 ? (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyText}>
-              {noFoodError ? 'No meal items found in this photo.' : 'No items yet - add something below'}
+              {noFoodError ? 'No meal items found in this photo.' :
+                (timeoutError || parseError) ? 'No reliable estimate was created.' :
+                'No items yet - add something below'}
             </Text>
           </View>
         ) : (
@@ -578,13 +609,13 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
         {/* Totals card with traffic lights */}
         <View style={styles.totalsCard}>
-          {venue && !isFallback && !imageQualityError && !noFoodError && (
+          {venue && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && (
             <Text style={styles.estimateStatusTeal}>✓ Using {venue.name} menu</Text>
           )}
           {source === 'barcode' && (
             <Text style={styles.estimateStatusTeal}>✓ Exact product data</Text>
           )}
-          {!venue && source !== 'barcode' && imageBase64 && !isFallback && !imageQualityError && !noFoodError && (
+          {!venue && source !== 'barcode' && imageBase64 && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && (
             <Text style={styles.estimateStatusSecondary}>AI estimate — tap to correct</Text>
           )}
           <Text style={styles.totalsTitle}>This meal</Text>

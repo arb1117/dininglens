@@ -490,6 +490,11 @@ export default function SearchScreen({ navigation, route }: Props) {
                 <Text style={s.nearbySectionVenue}>{nearbyVenue.name}</Text>
                 {` — ${nearbyPeriodLabel} Menu`}
               </Text>
+              <Text style={s.nearbySectionSource}>
+                {nearbyVenue.type === 'dining_hall'
+                  ? 'Official campus dining menu'
+                  : 'Matched from chain database — calories are approximate'}
+              </Text>
               {nearbyItems.map((item) => (
                 <TouchableOpacity
                   key={item.id}
@@ -1026,6 +1031,9 @@ const s = StyleSheet.create({
     paddingHorizontal: 4, paddingVertical: 10,
   },
   nearbySectionVenue: { color: '#00E5A0' },
+  nearbySectionSource: {
+    fontSize: 11, color: '#555', paddingHorizontal: 4, marginBottom: 6, fontStyle: 'italic',
+  },
   nearbyItem: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: '#1A1A1A', borderRadius: 10, padding: 14, marginBottom: 6,

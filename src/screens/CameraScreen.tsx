@@ -631,6 +631,9 @@ export default function CameraScreen({ navigation, route }: Props) {
                     <View style={styles.eoResultText}>
                       <Text style={styles.eoResultName}>{item.name}</Text>
                       {item.subtitle ? <Text style={styles.eoResultSub}>{item.subtitle}</Text> : null}
+                      <Text style={styles.eoResultSourceTag}>
+                        {item.type === 'dining_hall' ? 'Official campus dining menu' : 'Chain database — estimated calories'}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 )}
@@ -825,6 +828,7 @@ const styles = StyleSheet.create({
   eoResultText: { flex: 1 },
   eoResultName: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
   eoResultSub: { fontSize: 12, color: '#8A8A8A', marginTop: 1 },
+  eoResultSourceTag: { fontSize: 10, color: '#555', marginTop: 2, fontStyle: 'italic' },
   eoCancel: { paddingVertical: 18, alignItems: 'center', marginTop: 4 },
   eoCancelText: { fontSize: 15, color: '#8A8A8A', fontWeight: '600' },
 

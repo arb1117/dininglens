@@ -111,22 +111,59 @@ const bub = StyleSheet.create({
   },
 });
 
+const QUICK_PROMPTS = [
+  "What should I eat next?",
+  "Help me hit my protein goal",
+  "Explain today's macros",
+  "Dinner ideas near my goal",
+];
+
+function buildGreeting(
+  totalCal: number,
+  goalCal: number,
+  totalProtein: number,
+  goalProtein: number,
+  mealsLogged: number,
+): string {
+  const remaining = goalCal - totalCal;
+  const h = new Date().getHours();
+  const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  if (mealsLogged === 0) {
+    return `${greeting}! Nothing logged yet today. When you're ready, I can help you plan your meals to hit your ${goalCal} kcal goal. What's on your mind?`;
+  }
+  const proteinLeft = Math.max(goalProtein - totalProtein, 0);
+  const calLine = remaining > 0
+    ? `You have **${remaining} cal** left for today`
+    : `You're **${Math.abs(remaining)} cal over** your goal`;
+  const protLine = proteinLeft > 0
+    ? ` and still need **${Math.round(proteinLeft)}g protein**.`
+    : ` and you've hit your protein goal!`;
+  return `${greeting}! ${calLine}${protLine} Ask me anything about your nutrition.`;
+}
+
 export default function AIChatScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { mealLog, goals, waterCups, exerciseLog, totalBurned } = useMealContext();
 
+  const today = new Date().toDateString();
+
+  // Build contextual greeting once (not reactive — snapshot at mount time)
+  const initialGreeting = React.useMemo(() => {
+    const todayMeals = mealLog.filter(m => new Date(m.timestamp).toDateString() === today);
+    const totals = todayMeals.reduce(
+      (a, m) => ({ cal: a.cal + m.totals.cal, protein: a.protein + m.totals.protein }),
+      { cal: 0, protein: 0 }
+    );
+    return buildGreeting(totals.cal, goals.calories, totals.protein, goals.protein, todayMeals.length);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '0',
-      role: 'assistant',
-      text: "Hey! I'm your AI coach. I can see your food log and help you hit your goals. What's on your mind?",
-    },
+    { id: '0', role: 'assistant', text: initialGreeting },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const listRef = useRef<FlatList>(null);
-
-  const today = new Date().toDateString();
 
   const context = useMemo(() => {
     const todayMeals = mealLog.filter(m => new Date(m.timestamp).toDateString() === today);
@@ -225,6 +262,26 @@ export default function AIChatScreen() {
           ListFooterComponent={loading ? <TypingBubble /> : null}
         />
 
+        {/* Quick prompt chips — shown when no user message sent yet */}
+        {messages.length === 1 && !loading && (
+          <Animated.ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={s.quickRow}
+            contentContainerStyle={s.quickContent}
+          >
+            {QUICK_PROMPTS.map(prompt => (
+              <TouchableOpacity
+                key={prompt}
+                style={s.quickChip}
+                onPress={() => setInput(prompt)}
+              >
+                <Text style={s.quickChipText}>{prompt}</Text>
+              </TouchableOpacity>
+            ))}
+          </Animated.ScrollView>
+        )}
+
         <View style={s.inputRow}>
           <TextInput
             style={s.input}
@@ -301,6 +358,15 @@ const s = StyleSheet.create({
     borderColor: '#00E5A0',
   },
   chipText: { color: '#00E5A0', fontSize: 13, fontWeight: '600' },
+
+  quickRow: { flexGrow: 0, borderTopWidth: 1, borderTopColor: '#1A1A1A' },
+  quickContent: { paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
+  quickChip: {
+    backgroundColor: '#1A1A1A', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  quickChipText: { fontSize: 13, color: '#8A8A8A', fontWeight: '500' },
 
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10,

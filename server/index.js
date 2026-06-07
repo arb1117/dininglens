@@ -1,12 +1,72 @@
 require('dotenv').config();
 
 const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const dns = require('dns').promises;
+const net = require('net');
 
 const AnthropicModule = require('@anthropic-ai/sdk');
 const Anthropic = AnthropicModule.Anthropic ?? AnthropicModule.default ?? AnthropicModule;
 
 const app = express();
-app.use(express.json({ limit: '20mb' }));
+app.set('trust proxy', 1);
+app.use(helmet());
+app.use(cors({
+  origin: (origin, cb) => {
+    const allowed = (process.env.CORS_ORIGINS || '')
+      .split(',')
+      .map(o => o.trim())
+      .filter(Boolean);
+    if (!origin || allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
+    return cb(new Error('CORS origin not allowed'));
+  },
+}));
+app.use(express.json({ limit: '10mb' })); // images are base64, need room
+
+const IS_PROD = process.env.NODE_ENV === 'production';
+const MAX_SCRAPE_BYTES = 1024 * 1024;
+
+app.use((req, res, next) => {
+  req.requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  res.setHeader('X-Request-Id', req.requestId);
+  next();
+});
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_GLOBAL || 300),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_AI || 40),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many AI requests. Please try again later.' },
+});
+
+const scrapeLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_SCRAPE || 12),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many menu scraping requests. Please try again later.' },
+});
+
+app.use(globalLimiter);
+
+function logDebug(...args) {
+  if (!IS_PROD) console.log(...args);
+}
+
+function sendServerError(res, publicMessage = 'Something went wrong') {
+  return res.status(500).json({ error: publicMessage });
+}
 
 if (!process.env.ANTHROPIC_API_KEY) {
   console.error('ERROR: ANTHROPIC_API_KEY is not set.');
@@ -29,6 +89,55 @@ function extractJSONArray(text) {
   const end = stripped.lastIndexOf(']');
   if (start === -1 || end === -1) throw new Error('No JSON array found');
   return JSON.parse(stripped.slice(start, end + 1));
+}
+
+function isPrivateIPv4(ip) {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some(n => !Number.isInteger(n))) return true;
+  const [a, b] = parts;
+  return (
+    a === 10 ||
+    a === 127 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 169 && b === 254) ||
+    a === 0 ||
+    a >= 224
+  );
+}
+
+function isPrivateIP(ip) {
+  if (net.isIPv4(ip)) return isPrivateIPv4(ip);
+  if (net.isIPv6(ip)) {
+    const lower = ip.toLowerCase();
+    return lower === '::1' || lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80:');
+  }
+  return true;
+}
+
+async function assertPublicHttpsUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw Object.assign(new Error('Invalid URL'), { statusCode: 400 });
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw Object.assign(new Error('Only HTTPS URLs are supported'), { statusCode: 400 });
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname === 'localhost' || hostname.endsWith('.local')) {
+    throw Object.assign(new Error('Private hostnames are not supported'), { statusCode: 400 });
+  }
+
+  const records = await dns.lookup(hostname, { all: true, verbatim: true });
+  if (!records.length || records.some(record => isPrivateIP(record.address))) {
+    throw Object.assign(new Error('Private network URLs are not supported'), { statusCode: 400 });
+  }
+
+  return parsed.toString();
 }
 
 // ─── AI response validation ──────────────────────────────────────────────────
@@ -58,8 +167,9 @@ function validateAnalysisResult(raw) {
       if (!item || typeof item !== 'object') return null;
       const name = (typeof item.name === 'string' ? item.name : '').trim();
       if (!name) return null;
-      const calories = clampNum(item.calories, 0, 5000, 0);
-      if (calories > 5000) return null;
+      const rawCalories = Number(item.calories) || 0;
+      if (rawCalories > 5000) return null;
+      const calories = Math.max(0, rawCalories);
       return {
         ...item,
         name,
@@ -213,7 +323,7 @@ const SUPPLEMENT_GUIDANCE = `For supplements, protein powders, fiber supplements
 
 // ─── /analyze ────────────────────────────────────────────────────────────────
 
-app.post('/analyze', async (req, res) => {
+app.post('/analyze', aiLimiter, async (req, res) => {
   console.log('[/analyze] request received');
   const { imageBase64, menuItems } = req.body;
 
@@ -221,7 +331,7 @@ app.post('/analyze', async (req, res) => {
     console.error('[/analyze] Missing imageBase64');
     return res.status(400).json({ error: 'imageBase64 is required' });
   }
-  console.log(`[/analyze] imageBase64 length: ${imageBase64.length}, menuItems: ${menuItems?.length ?? 0}`);
+  logDebug(`[/analyze] imageBase64 length: ${imageBase64.length}, menuItems: ${menuItems?.length ?? 0}`);
 
   let prompt;
 
@@ -317,22 +427,22 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
       throw aiErr;
     }
     const raw = response.content[0]?.text ?? '';
-    console.log('[/analyze] Raw response:', raw.slice(0, 200));
+    logDebug('[/analyze] Raw response:', raw.slice(0, 200));
     const parsed = validateAnalysisResult(raw);
     console.log('[/analyze] items:', parsed.detectedItems?.length, 'reason:', parsed.reason ?? 'none');
     res.json(parsed);
   } catch (err) {
-    console.error('[/analyze] Error:', err);
-    res.status(500).json({ error: err.message ?? String(err) });
+    console.error('[/analyze] Error:', err.message ?? err, 'requestId=', req.requestId);
+    sendServerError(res, 'Analysis failed');
   }
 });
 
 // ─── /reanalyze ──────────────────────────────────────────────────────────────
 
-app.post('/reanalyze', async (req, res) => {
+app.post('/reanalyze', aiLimiter, async (req, res) => {
   console.log('[/reanalyze] request received');
   const { imageBase64, feedback, previousItems, menuItems } = req.body;
-  console.log(`[/reanalyze] imageBase64 length: ${imageBase64?.length ?? 'MISSING'}, feedback: "${feedback}", previousItems: ${previousItems?.length ?? 0}`);
+  logDebug(`[/reanalyze] imageBase64 length: ${imageBase64?.length ?? 'MISSING'}, previousItems: ${previousItems?.length ?? 0}`);
 
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
   if (!feedback)    return res.status(400).json({ error: 'feedback is required' });
@@ -430,13 +540,13 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
       throw aiErr;
     }
     const raw = response.content[0]?.text ?? '';
-    console.log('[/reanalyze] Raw response:', raw.slice(0, 200));
+    logDebug('[/reanalyze] Raw response:', raw.slice(0, 200));
     const parsed = validateAnalysisResult(raw);
     console.log('[/reanalyze] items:', parsed.detectedItems?.length);
     res.json(parsed);
   } catch (err) {
-    console.error('[/reanalyze] Error:', err);
-    res.status(500).json({ error: err.message ?? String(err) });
+    console.error('[/reanalyze] Error:', err.message ?? err, 'requestId=', req.requestId);
+    sendServerError(res, 'Re-analysis failed');
   }
 });
 
@@ -452,15 +562,15 @@ app.post('/lookup-nutrition', async (req, res) => {
     if (results.length > 0) return res.json(results[0]);
     throw new Error('No USDA results for query');
   } catch (err) {
-    console.error('[/lookup-nutrition] Error:', err.message);
-    res.status(500).json({ error: err.message ?? String(err) });
+    console.error('[/lookup-nutrition] Error:', err.message, 'requestId=', req.requestId);
+    sendServerError(res, 'Nutrition lookup failed');
   }
 });
 
 // ─── /lookup ─────────────────────────────────────────────────────────────────
 // "Add item manually" on EstimateScreen — tries OFF, falls back to Claude
 
-app.post('/lookup', async (req, res) => {
+app.post('/lookup', aiLimiter, async (req, res) => {
   console.log('[/lookup] request received');
   const { query } = req.body;
   if (!query) return res.status(400).json({ error: 'query is required' });
@@ -490,19 +600,19 @@ app.post('/lookup', async (req, res) => {
       ],
     });
     const raw = response.content[0]?.text ?? '';
-    console.log('[/lookup] Claude raw:', raw.slice(0, 200));
+    logDebug('[/lookup] Claude raw:', raw.slice(0, 200));
     const parsed = extractJSON(raw);
     res.json(parsed);
   } catch (err) {
-    console.error('[/lookup] Error:', err);
-    res.status(500).json({ error: err.message ?? String(err) });
+    console.error('[/lookup] Error:', err.message ?? err, 'requestId=', req.requestId);
+    sendServerError(res, 'Lookup failed');
   }
 });
 
 // ─── /search ─────────────────────────────────────────────────────────────────
 // Food search for SearchScreen — parallel OFF + USDA, dedup, Claude fallback
 
-app.get('/search', async (req, res) => {
+app.get('/search', aiLimiter, async (req, res) => {
   console.log('[/search] request received');
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: 'q is required' });
@@ -543,12 +653,12 @@ app.get('/search', async (req, res) => {
       ],
     });
     const raw = response.content[0]?.text ?? '';
-    console.log('[/search] Claude raw:', raw.slice(0, 300));
+    logDebug('[/search] Claude raw:', raw.slice(0, 300));
     const parsed = extractJSONArray(raw);
     res.json(parsed);
   } catch (err) {
-    console.error('[/search] Claude error:', err);
-    res.status(500).json({ error: err.message ?? String(err) });
+    console.error('[/search] Claude error:', err.message ?? err, 'requestId=', req.requestId);
+    sendServerError(res, 'Search failed');
   }
 });
 
@@ -587,8 +697,8 @@ app.post('/detect-restaurant', async (req, res) => {
     console.log(`[/detect-restaurant] Found: "${name}" placeId=${placeId} website=${website ?? 'none'}`);
     return res.json({ placeId, name, website });
   } catch (err) {
-    console.error('[/detect-restaurant] Error:', err.message);
-    res.status(500).json({ error: err.message ?? String(err) });
+    console.error('[/detect-restaurant] Error:', err.message, 'requestId=', req.requestId);
+    sendServerError(res, 'Restaurant detection failed');
   }
 });
 
@@ -599,7 +709,7 @@ app.post('/detect-restaurant', async (req, res) => {
 const scrapeCache = new Map(); // placeId → { items, cachedAt }
 const SCRAPE_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-app.post('/scrape-menu', async (req, res) => {
+app.post('/scrape-menu', scrapeLimiter, async (req, res) => {
   console.log('[/scrape-menu] request received');
   const { website, restaurantName, placeId } = req.body;
   if (!website || !restaurantName) return res.status(400).json({ error: 'website and restaurantName required' });
@@ -614,12 +724,22 @@ app.post('/scrape-menu', async (req, res) => {
   }
 
   try {
+    const safeWebsite = await assertPublicHttpsUrl(website);
+
     // Fetch the website HTML (best-effort; JS-rendered sites will return minimal content)
-    const pageRes = await fetch(website, {
+    const pageRes = await fetch(safeWebsite, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DiningLens/1.0)' },
       signal: AbortSignal.timeout(8000),
     });
+    await assertPublicHttpsUrl(pageRes.url);
+    const contentLength = Number(pageRes.headers.get('content-length') || 0);
+    if (contentLength > MAX_SCRAPE_BYTES) {
+      return res.status(413).json({ error: 'Menu page is too large' });
+    }
     const html = await pageRes.text();
+    if (html.length > MAX_SCRAPE_BYTES) {
+      return res.status(413).json({ error: 'Menu page is too large' });
+    }
 
     // Strip HTML tags and collapse whitespace for cleaner Claude input
     const text = html
@@ -630,7 +750,7 @@ app.post('/scrape-menu', async (req, res) => {
       .trim()
       .slice(0, 8000); // cap to avoid token overrun
 
-    console.log(`[/scrape-menu] fetched ${text.length} chars from ${website}`);
+    console.log(`[/scrape-menu] fetched ${text.length} chars from ${safeWebsite}`);
 
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -648,7 +768,7 @@ app.post('/scrape-menu', async (req, res) => {
     });
 
     const raw = response.content[0]?.text ?? '';
-    console.log('[/scrape-menu] Claude raw:', raw.slice(0, 300));
+    logDebug('[/scrape-menu] Claude raw:', raw.slice(0, 300));
     let items = [];
     try {
       items = extractJSONArray(raw);
@@ -663,8 +783,9 @@ app.post('/scrape-menu', async (req, res) => {
 
     res.json({ items, source: 'scrape' });
   } catch (err) {
-    console.error('[/scrape-menu] Error:', err.message);
-    res.status(500).json({ error: err.message ?? String(err) });
+    console.error('[/scrape-menu] Error:', err.message, 'requestId=', req.requestId);
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: status === 500 ? 'Menu scraping failed' : err.message });
   }
 });
 
@@ -711,14 +832,14 @@ app.get('/barcode', async (req, res) => {
     console.log(`[/barcode] found: ${name}, serving=${servingGrams}g, cal=${result.calories}`);
     return res.json(result);
   } catch (err) {
-    console.error('[/barcode] Error:', err.message);
-    res.status(500).json({ error: err.message || String(err) });
+    console.error('[/barcode] Error:', err.message, 'requestId=', req.requestId);
+    sendServerError(res, 'Barcode lookup failed');
   }
 });
 
 // ─── /estimate-exercise ──────────────────────────────────────────────────────
 
-app.post('/estimate-exercise', async (req, res) => {
+app.post('/estimate-exercise', aiLimiter, async (req, res) => {
   const { name, duration, type } = req.body;
   if (!name || !duration) return res.status(400).json({ error: 'name and duration required' });
   try {
@@ -755,7 +876,7 @@ The user can tap a suggested food to add it directly to their log.
 
 Never be preachy or guilt-trip about food choices.`;
 
-app.post('/chat', async (req, res) => {
+app.post('/chat', aiLimiter, async (req, res) => {
   console.log('[/chat] request received');
   const { message, context, history } = req.body;
   if (!message) return res.status(400).json({ error: 'message required' });
@@ -778,15 +899,15 @@ app.post('/chat', async (req, res) => {
     console.log('[/chat] reply length:', reply.length);
     res.json({ reply });
   } catch (err) {
-    console.error('[/chat] Error:', err);
-    res.status(500).json({ error: err.message ?? String(err) });
+    console.error('[/chat] Error:', err.message ?? err, 'requestId=', req.requestId);
+    sendServerError(res, 'Chat failed');
   }
 });
 
 // ─── /calculate-tdee ─────────────────────────────────────────────────────────
 // Mifflin-St Jeor BMR → Claude picks activity multiplier from plain-English desc.
 
-app.post('/calculate-tdee', async (req, res) => {
+app.post('/calculate-tdee', aiLimiter, async (req, res) => {
   console.log('[/calculate-tdee] request received');
   const { height_cm, weight_kg, age, sex, goal, activityDescription } = req.body;
   if (!height_cm || !weight_kg || !age || !sex || !goal) {
@@ -841,7 +962,7 @@ app.post('/calculate-tdee', async (req, res) => {
 
 // ─── /interpret-quantity ─────────────────────────────────────────────────────
 
-app.post('/interpret-quantity', async (req, res) => {
+app.post('/interpret-quantity', aiLimiter, async (req, res) => {
   const { foodName, description, servingSize, caloriesPerServing } = req.body;
   if (!foodName || !description) {
     return res.status(400).json({ error: 'foodName and description required' });
@@ -866,15 +987,22 @@ Estimate the quantity as servings AND grams. Return ONLY JSON:
       explanation:    parsed.explanation ?? '',
     });
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    console.error('[/interpret-quantity] Error:', err.message ?? err, 'requestId=', req.requestId);
+    sendServerError(res, 'Quantity interpretation failed');
   }
 });
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+app.use((err, req, res, next) => {
+  const id = Math.random().toString(36).slice(2, 8);
+  console.error(`[error:${id}]`, err.message);
+  res.status(err.status || 500).json({ error: 'An unexpected error occurred', errorId: id });
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`DiningLens proxy running on :${PORT}`);
   console.log(`ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'present' : 'MISSING'}`);
-  console.log(`USDA_API_KEY: ${process.env.USDA_API_KEY || 'DEMO_KEY (default)'}`);
+  console.log(`USDA_API_KEY: ${process.env.USDA_API_KEY ? 'present' : 'DEMO_KEY (default)'}`);
 });

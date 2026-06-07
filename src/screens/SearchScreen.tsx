@@ -9,8 +9,7 @@ import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem, MealPeriod, autoDetectPeriod } from '../context/MealContext';
 import { detectVenue, Venue } from '../services/venueService';
 import { fetchVenueMenu, MenuItem } from '../services/menuService';
-
-const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
+import { API_BASE_URL } from '../config/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Search'>;
 
@@ -142,7 +141,7 @@ export default function SearchScreen({ navigation, route }: Props) {
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${SERVER_URL}/search?q=${encodeURIComponent(query.trim())}`);
+        const res = await fetch(`${API_BASE_URL}/search?q=${encodeURIComponent(query.trim())}`);
         if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
         setApiResults(Array.isArray(data) ? data : []);
@@ -316,7 +315,7 @@ export default function SearchScreen({ navigation, route }: Props) {
     setNlLoading(true);
     setNlExplanation(null);
     try {
-      const res = await fetch(`${SERVER_URL}/interpret-quantity`, {
+      const res = await fetch(`${API_BASE_URL}/interpret-quantity`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

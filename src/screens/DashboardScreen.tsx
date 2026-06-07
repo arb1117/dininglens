@@ -9,8 +9,7 @@ import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext, periodFromTimestamp } from '../context/MealContext';
 import type { ExerciseEntry, MacroItem, MealPeriod } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
-
-const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
+import { API_BASE_URL } from '../config/api';
 
 const PERIOD_ORDER: MealPeriod[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
 const PERIOD_LABELS: Record<MealPeriod, string> = {
@@ -162,7 +161,7 @@ function AddExerciseModal({ visible, onClose, onAdd }: ExerciseModalProps) {
     setEstimating(true);
     let kcal = 0;
     try {
-      const r = await fetch(`${SERVER_URL}/estimate-exercise`, {
+      const r = await fetch(`${API_BASE_URL}/estimate-exercise`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), duration: parseInt(duration) || 30, type }),

@@ -1,0 +1,12 @@
+node_modules
+.expo
+.git
+.env
+.env.*
+*.log
+CODEX_WORKING_TREE.patch
+ios
+android
+dist
+web-build
+

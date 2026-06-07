@@ -7,13 +7,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useMealContext, UserGoals } from '../context/MealContext';
+import { API_BASE_URL } from '../config/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Goals'>;
 
 type GoalKey = 'lose' | 'maintain' | 'build';
 type Step = 'goal' | 'profile' | 'activity' | 'result' | 'manual';
 
-const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
 const GOALS_KEY   = '@dininglens_goals';
 const PROFILE_KEY = '@dininglens_profile';
 
@@ -197,7 +197,7 @@ export default function GoalsScreen({ navigation }: Props) {
       : parseFloat(weight) / 2.205;
 
     try {
-      const res = await fetch(`${SERVER_URL}/calculate-tdee`, {
+      const res = await fetch(`${API_BASE_URL}/calculate-tdee`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

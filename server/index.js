@@ -87,13 +87,19 @@ const analyzeSchema = z.object({
 });
 
 const reanalyzeSchema = analyzeSchema.extend({
-  feedback: z.string().max(500).optional(),
+  feedback: z.string().min(1).max(500),
   previousItems: z.array(z.any()).optional(),
 });
 
 const chatSchema = z.object({
   message: z.string().min(1).max(2000),
-  context: z.object({ todayLog: z.any(), goals: z.any(), streak: z.number().optional() }).optional(),
+  context: z.object({
+    todayLog: z.any().optional(),
+    goals: z.any().optional(),
+    water: z.any().optional(),
+    exercise: z.any().optional(),
+    streak: z.number().optional(),
+  }).passthrough().optional(),
   history: z.array(z.any()).max(20).optional(),
 });
 
@@ -108,11 +114,32 @@ const tdeeSchema = z.object({
 
 const searchSchema = z.object({ q: z.string().min(1).max(200) });
 
+const lookupSchema = z.object({ query: z.string().min(1).max(200) });
+
 const barcodeSchema = z.object({ code: z.string().min(1).max(50) });
+
+const detectRestaurantSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+});
+
+const scrapeSchema = z.object({
+  website: z.string().url().max(2048),
+  restaurantName: z.string().min(1).max(200),
+  placeId: z.string().max(200).optional(),
+});
+
+const exerciseSchema = z.object({
+  name: z.string().min(1).max(200),
+  duration: z.coerce.number().min(1).max(1440),
+  type: z.enum(['cardio', 'strength', 'other']).optional(),
+});
 
 const interpretSchema = z.object({
   foodName: z.string().min(1).max(200),
   description: z.string().min(1).max(500),
+  servingSize: z.string().max(100).optional(),
+  caloriesPerServing: z.number().optional(),
 });
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -388,7 +415,9 @@ app.post('/analyze', aiLimiter, async (req, res) => {
           : `- ${i.name}`;
       })
       .join('\n');
-    prompt = `${FOOD_PREAMBLE}
+    prompt = `${INJECTION_GUARD}
+
+${FOOD_PREAMBLE}
 
 The user has photographed their meal at a dining hall.
 
@@ -602,8 +631,9 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
 
 app.post('/lookup-nutrition', async (req, res) => {
   console.log('[/lookup-nutrition] request received');
-  const { query } = req.body;
-  if (!query) return res.status(400).json({ error: 'query is required' });
+  const body = validate(lookupSchema, req.body, res);
+  if (!body) return;
+  const { query } = body;
   try {
     const results = await searchUSDA(query);
     if (results.length > 0) return res.json(results[0]);
@@ -619,8 +649,9 @@ app.post('/lookup-nutrition', async (req, res) => {
 
 app.post('/lookup', aiLimiter, async (req, res) => {
   console.log('[/lookup] request received');
-  const { query } = req.body;
-  if (!query) return res.status(400).json({ error: 'query is required' });
+  const body = validate(lookupSchema, req.body, res);
+  if (!body) return;
+  const { query } = body;
 
   // Try Open Food Facts first (good for branded/packaged products)
   try {
@@ -642,7 +673,7 @@ app.post('/lookup', aiLimiter, async (req, res) => {
       messages: [
         {
           role: 'user',
-          content: `Return nutrition facts for a standard serving of ${query} as JSON: {name, calories, protein, carbs, fat}. Return ONLY JSON, no markdown.`,
+          content: `${INJECTION_GUARD}\n\nReturn nutrition facts for a standard serving of the following food name as JSON: {name, calories, protein, carbs, fat}. Food name: "${query}". Return ONLY JSON, no markdown.`,
         },
       ],
     });
@@ -696,7 +727,7 @@ app.get('/search', aiLimiter, async (req, res) => {
       messages: [
         {
           role: 'user',
-          content: `List the top 5 foods matching '${q}' with accurate nutrition per standard serving. Return ONLY a JSON array with no markdown: [{"name":"...","serving_size":"...","calories":0,"protein":0,"carbs":0,"fat":0}]`,
+          content: `${INJECTION_GUARD}\n\nList the top 5 foods matching the following search query with accurate nutrition per standard serving. Query: "${q}". Return ONLY a JSON array with no markdown: [{"name":"...","serving_size":"...","calories":0,"protein":0,"carbs":0,"fat":0}]`,
         },
       ],
     });
@@ -717,8 +748,9 @@ app.get('/search', aiLimiter, async (req, res) => {
 
 app.post('/detect-restaurant', async (req, res) => {
   console.log('[/detect-restaurant] request received');
-  const { lat, lon } = req.body;
-  if (lat == null || lon == null) return res.status(400).json({ error: 'lat and lon required' });
+  const body = validate(detectRestaurantSchema, req.body, res);
+  if (!body) return;
+  const { lat, lon } = body;
 
   const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) return res.status(503).json({ error: 'GOOGLE_PLACES_API_KEY not configured' });
@@ -759,8 +791,9 @@ const SCRAPE_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 app.post('/scrape-menu', scrapeLimiter, async (req, res) => {
   console.log('[/scrape-menu] request received');
-  const { website, restaurantName, placeId } = req.body;
-  if (!website || !restaurantName) return res.status(400).json({ error: 'website and restaurantName required' });
+  const body = validate(scrapeSchema, req.body, res);
+  if (!body) return;
+  const { website, restaurantName, placeId } = body;
 
   // Check cache
   if (placeId) {
@@ -889,15 +922,16 @@ app.get('/barcode', async (req, res) => {
 // ─── /estimate-exercise ──────────────────────────────────────────────────────
 
 app.post('/estimate-exercise', aiLimiter, async (req, res) => {
-  const { name, duration, type } = req.body;
-  if (!name || !duration) return res.status(400).json({ error: 'name and duration required' });
+  const body = validate(exerciseSchema, req.body, res);
+  if (!body) return;
+  const { name, duration, type } = body;
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 128,
       messages: [{
         role: 'user',
-        content: `Estimate calories burned for: ${name}, ${duration} minutes, type: ${type || 'cardio'}. Return ONLY JSON: {"caloriesBurned": <number>}`,
+        content: `${INJECTION_GUARD}\n\nEstimate calories burned for this exercise. Exercise: "${name}". Duration: ${duration} minutes. Type: ${type || 'cardio'}. Return ONLY JSON: {"caloriesBurned": <number>}`,
       }],
     });
     const parsed = extractJSON(response.content[0]?.text ?? '{}');
@@ -981,7 +1015,7 @@ app.post('/calculate-tdee', aiLimiter, async (req, res) => {
         max_tokens: 128,
         messages: [{
           role: 'user',
-          content: `Based on this lifestyle description, estimate an activity multiplier for TDEE calculation.\nSedentary = 1.2, Light = 1.375, Moderate = 1.55, Active = 1.725, Very Active = 1.9\nDescription: "${activityDescription.trim()}"\nReturn JSON only: { "multiplier": <number>, "explanation": "<one sentence, plain English>" }`,
+          content: `${INJECTION_GUARD}\n\nBased on this lifestyle description, estimate an activity multiplier for TDEE calculation.\nSedentary = 1.2, Light = 1.375, Moderate = 1.55, Active = 1.725, Very Active = 1.9\nDescription: "${activityDescription.trim()}"\nReturn JSON only: { "multiplier": <number>, "explanation": "<one sentence, plain English>" }`,
         }],
       });
       const parsed = extractJSON(response.content[0]?.text ?? '{}');
@@ -1018,8 +1052,7 @@ app.post('/calculate-tdee', aiLimiter, async (req, res) => {
 app.post('/interpret-quantity', aiLimiter, async (req, res) => {
   const body = validate(interpretSchema, req.body, res);
   if (!body) return;
-  const { foodName, description } = body;
-  const { servingSize, caloriesPerServing } = req.body;
+  const { foodName, description, servingSize, caloriesPerServing } = body;
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',

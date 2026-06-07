@@ -8,8 +8,8 @@ import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
+import { API_BASE_URL } from '../config/api';
 
-const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
 const MAX_HISTORY = 10;
 
 type Message = {
@@ -161,7 +161,7 @@ export default function AIChatScreen() {
     const history = messages.slice(-MAX_HISTORY).map(m => ({ role: m.role, content: m.text }));
 
     try {
-      const res = await fetch(`${SERVER_URL}/chat`, {
+      const res = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, context, history }),

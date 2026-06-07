@@ -20,8 +20,7 @@ import { fetchVenueMenu } from '../services/menuService';
 import { CHAIN_MENUS, getChainMenuItems } from '../data/chainMenus';
 import { analyzeImage } from '../services/visionService';
 import { useMealContext } from '../context/MealContext';
-
-const SERVER_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://192.168.1.71:3001';
+import { API_BASE_URL } from '../config/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Camera'>;
 
@@ -215,7 +214,7 @@ export default function CameraScreen({ navigation, route }: Props) {
     setBarcodeError(null);
     setBarcodeNotFoundCode(null);
     try {
-      const res = await fetch(`${SERVER_URL}/barcode?code=${encodeURIComponent(data)}`);
+      const res = await fetch(`${API_BASE_URL}/barcode?code=${encodeURIComponent(data)}`);
       if (res.status === 404) {
         setBarcodeError('Product not found — try searching manually');
         setBarcodeNotFoundCode(data);

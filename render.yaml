@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: dininglens-api
+    env: node
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: npm run server
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RATE_LIMIT_GLOBAL
+        value: "300"
+      - key: RATE_LIMIT_AI
+        value: "40"
+      - key: RATE_LIMIT_SCRAPE
+        value: "12"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: USDA_API_KEY
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+

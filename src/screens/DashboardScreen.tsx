@@ -281,9 +281,9 @@ function BackendBanner({ status, onRetry }: { status: HealthStatus; onRetry: () 
   return (
     <View style={banner.bar}>
       {isWaking ? (
-        <ActivityIndicator size="small" color="#FF9500" style={banner.icon} />
+        <ActivityIndicator size="small" color="#FF9500" />
       ) : (
-        <Text style={banner.icon}>⚠️</Text>
+        <Text>⚠️</Text>
       )}
       <Text style={banner.text} numberOfLines={2}>
         {isWaking
@@ -305,7 +305,7 @@ const banner = StyleSheet.create({
     backgroundColor: '#2A1F00', borderBottomWidth: 1, borderColor: '#4A3800',
     paddingHorizontal: 16, paddingVertical: 10, gap: 10,
   },
-  icon: { fontSize: 16 },
+  icon: {},
   text: { flex: 1, fontSize: 13, color: '#FFB800', lineHeight: 18 },
   retryBtn: {
     paddingHorizontal: 12, paddingVertical: 6,

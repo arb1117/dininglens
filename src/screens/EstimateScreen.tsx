@@ -386,8 +386,15 @@ export default function EstimateScreen({ navigation, route }: Props) {
     [items, portions]
   );
 
+  const [zerocalWarning, setZerocalWarning] = useState(false);
+
   function handleLogMeal() {
     if (items.length === 0) return;
+    if (totals.cal === 0) {
+      setZerocalWarning(true);
+      return;
+    }
+    setZerocalWarning(false);
     const mealItems: MacroItem[] = items.map(item => {
       const portion = getPortionFor(item.id);
       const scaled = getScaled(item, portion);
@@ -490,6 +497,16 @@ export default function EstimateScreen({ navigation, route }: Props) {
         {isFallback && (
           <View style={styles.fallbackCard}>
             <Text style={styles.fallbackText}>Using default menu items — tap a size to adjust</Text>
+          </View>
+        )}
+
+        {/* AI disclaimer — shown for photo-based AI estimates only */}
+        {imageBase64 && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && source !== 'barcode' && !venue && (
+          <View style={styles.aiDisclaimerCard}>
+            <Text style={styles.aiDisclaimerTitle}>AI estimates — review before logging</Text>
+            <Text style={styles.aiDisclaimerText}>
+              Calories and macros are approximate. Edit portions or values if anything looks off — swipe left to remove an item.
+            </Text>
           </View>
         )}
 
@@ -646,6 +663,14 @@ export default function EstimateScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           ))}
         </View>
+
+        {zerocalWarning && (
+          <View style={styles.zerocalWarning}>
+            <Text style={styles.zerocalWarningText}>
+              All items show 0 calories — adjust portions or values before logging.
+            </Text>
+          </View>
+        )}
 
         <TouchableOpacity
           style={[styles.button, items.length === 0 && styles.buttonDisabled]}
@@ -806,6 +831,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, marginBottom: 16, borderWidth: 1, borderColor: '#2A2A2A',
   },
   fallbackText: { fontSize: 13, color: '#8A8A8A' },
+
+  aiDisclaimerCard: {
+    backgroundColor: '#1A1400', borderRadius: 12, padding: 14, marginBottom: 16,
+    borderWidth: 1, borderColor: '#3A3000', flexDirection: 'column', gap: 4,
+  },
+  aiDisclaimerTitle: { fontSize: 13, fontWeight: '700', color: '#FFB800' },
+  aiDisclaimerText: { fontSize: 12, color: '#8A7A40', lineHeight: 18 },
+
+  zerocalWarning: {
+    backgroundColor: '#1A0A00', borderRadius: 10, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: '#FF6B00',
+  },
+  zerocalWarningText: { fontSize: 13, color: '#FF9500', lineHeight: 18 },
 
   sectionLabel: {
     fontSize: 13, fontWeight: '600', color: '#8A8A8A',

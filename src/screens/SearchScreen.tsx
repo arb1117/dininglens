@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
   ActivityIndicator, StyleSheet, Modal, ScrollView,
-  Keyboard, Platform, TouchableWithoutFeedback,
+  Keyboard, Platform, TouchableWithoutFeedback, KeyboardAvoidingView,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -101,6 +101,38 @@ export default function SearchScreen({ navigation, route }: Props) {
     selectedPeriod ?? autoDetectPeriod()
   );
   const periodLocked = !!selectedPeriod;
+
+  // Custom food modal
+  const [customVisible, setCustomVisible] = useState(false);
+  const [customName, setCustomName]       = useState('');
+  const [customCal, setCustomCal]         = useState('');
+  const [customProtein, setCustomProtein] = useState('');
+  const [customCarbs, setCustomCarbs]     = useState('');
+  const [customFat, setCustomFat]         = useState('');
+
+  function handleLogCustom() {
+    const name = customName.trim();
+    if (!name) return;
+    const item: MacroItem = {
+      name,
+      portion: '1 serving',
+      cal:     parseInt(customCal)     || 0,
+      protein: parseFloat(customProtein) || 0,
+      carbs:   parseFloat(customCarbs)   || 0,
+      fat:     parseFloat(customFat)     || 0,
+    };
+    addMeal({
+      id:        String(Date.now()),
+      timestamp: new Date().toISOString(),
+      period:    pickedPeriod,
+      items:     [item],
+      totals:    { cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
+    });
+    setCustomVisible(false);
+    setCustomName(''); setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
+    setToastName(name);
+    setTimeout(() => { setToastName(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }, 1200);
+  }
 
   // Build My Foods index from mealLog
   const myFoods = useMemo(() => {
@@ -431,6 +463,12 @@ export default function SearchScreen({ navigation, route }: Props) {
             <Text style={[s.chipText, filter === key && s.chipTextActive]}>{label}</Text>
           </TouchableOpacity>
         ))}
+        <TouchableOpacity
+          style={[s.chip, s.chipCustom]}
+          onPress={() => setCustomVisible(true)}
+        >
+          <Text style={s.chipCustomText}>+ Custom</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {loading && filter !== 'myfoods' && (
@@ -481,7 +519,13 @@ export default function SearchScreen({ navigation, route }: Props) {
           ) : (
             <View style={s.emptyStateInline}>
               <Text style={s.emptyText}>No results for "{query}"</Text>
-              <Text style={s.emptySubText}>Try a different search</Text>
+              <Text style={s.emptySubText}>Try a different search or log it manually</Text>
+              <TouchableOpacity
+                style={s.customFoodBtn}
+                onPress={() => { setCustomName(query.trim()); setCustomVisible(true); }}
+              >
+                <Text style={s.customFoodBtnText}>Log "{query}" as custom food</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={s.aiSuggestionBtn}
                 onPress={() => navigation.navigate('MainTabs', { screen: 'AICoach' })}
@@ -646,6 +690,115 @@ export default function SearchScreen({ navigation, route }: Props) {
           ))}
         </View>
       </Modal>
+
+      {/* ── Custom Food Modal ──────────────────────────────────────────────── */}
+      <Modal
+        visible={customVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setCustomVisible(false)}
+      >
+        <TouchableOpacity
+          style={s.backdrop}
+          activeOpacity={1}
+          onPress={() => setCustomVisible(false)}
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={s.customSheet}
+        >
+          <View style={s.handle} />
+          <Text style={s.customSheetTitle}>Custom Food</Text>
+          <Text style={s.customSheetSub}>
+            Log anything — AI may have missed it
+          </Text>
+
+          <Text style={s.customLabel}>Name</Text>
+          <TextInput
+            style={s.customInput}
+            value={customName}
+            onChangeText={setCustomName}
+            placeholder="e.g. Chicken sandwich"
+            placeholderTextColor="#555"
+            autoFocus
+          />
+
+          <View style={s.customRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.customLabel}>Calories</Text>
+              <TextInput
+                style={s.customInput}
+                value={customCal}
+                onChangeText={setCustomCal}
+                placeholder="0"
+                placeholderTextColor="#555"
+                keyboardType="number-pad"
+              />
+            </View>
+          </View>
+
+          <View style={s.customRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.customLabel}>Protein (g)</Text>
+              <TextInput
+                style={s.customInput}
+                value={customProtein}
+                onChangeText={setCustomProtein}
+                placeholder="0"
+                placeholderTextColor="#555"
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={{ width: 10 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.customLabel}>Carbs (g)</Text>
+              <TextInput
+                style={s.customInput}
+                value={customCarbs}
+                onChangeText={setCustomCarbs}
+                placeholder="0"
+                placeholderTextColor="#555"
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={{ width: 10 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.customLabel}>Fat (g)</Text>
+              <TextInput
+                style={s.customInput}
+                value={customFat}
+                onChangeText={setCustomFat}
+                placeholder="0"
+                placeholderTextColor="#555"
+                keyboardType="decimal-pad"
+              />
+            </View>
+          </View>
+
+          <Text style={s.customLabel}>Meal period</Text>
+          <View style={s.customPeriodRow}>
+            {(['breakfast', 'lunch', 'dinner', 'snacks'] as MealPeriod[]).map(p => (
+              <TouchableOpacity
+                key={p}
+                style={[s.customPeriodBtn, pickedPeriod === p && s.customPeriodBtnActive]}
+                onPress={() => setPickedPeriod(p)}
+              >
+                <Text style={[s.customPeriodBtnText, pickedPeriod === p && s.customPeriodBtnTextActive]}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={[s.logCustomBtn, !customName.trim() && s.logCustomBtnDisabled]}
+            onPress={handleLogCustom}
+            disabled={!customName.trim()}
+          >
+            <Text style={s.logCustomBtnText}>Log Custom Food</Text>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -700,6 +853,46 @@ const s = StyleSheet.create({
 
   emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyText: { fontSize: 15, color: '#8A8A8A', textAlign: 'center' },
+
+  chipCustom: { backgroundColor: '#0A2A1A', borderColor: '#1A4A2A' },
+  chipCustomText: { fontSize: 14, fontWeight: '700', color: '#00E5A0' },
+
+  customFoodBtn: {
+    backgroundColor: '#0A2A1A', borderRadius: 12, borderWidth: 1, borderColor: '#1A4A2A',
+    paddingHorizontal: 18, paddingVertical: 10,
+  },
+  customFoodBtnText: { fontSize: 14, color: '#00E5A0', fontWeight: '700' },
+
+  // Custom food modal
+  customSheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: '#1A1A1A',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: Platform.OS === 'ios' ? 44 : 28,
+    borderTopWidth: 1, borderColor: '#2A2A2A',
+  },
+  customSheetTitle: { fontSize: 20, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
+  customSheetSub: { fontSize: 13, color: '#8A8A8A', marginBottom: 20 },
+  customLabel: { fontSize: 12, fontWeight: '600', color: '#8A8A8A', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
+  customInput: {
+    backgroundColor: '#2A2A2A', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 16, color: '#FFFFFF', marginBottom: 16,
+  },
+  customRow: { flexDirection: 'row', marginBottom: 0 },
+  customPeriodRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  customPeriodBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: '#2A2A2A', alignItems: 'center',
+  },
+  customPeriodBtnActive: { backgroundColor: '#00E5A0' },
+  customPeriodBtnText: { color: '#8A8A8A', fontWeight: '600', fontSize: 12 },
+  customPeriodBtnTextActive: { color: '#0F0F0F' },
+  logCustomBtn: {
+    backgroundColor: '#00E5A0', borderRadius: 12, paddingVertical: 16, alignItems: 'center',
+  },
+  logCustomBtnDisabled: { opacity: 0.4 },
+  logCustomBtnText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
 
   list: { padding: 12, paddingTop: 8 },
   resultCard: {

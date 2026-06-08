@@ -271,11 +271,7 @@ export default function GoalsScreen({ navigation }: Props) {
   }
 
   // ── Save helpers ──────────────────────────────────────────────────────────
-  async function saveAndGo(cal: number, protein: number, carbs: number, fat: number) {
-    const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
-    await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(g));
-    setGoals(g);
-
+  async function persistProfile() {
     const weightN   = parseFloat(weight) || 0;
     const weightLbs = useKg ? weightN * 2.205 : weightN;
     const weightKg  = useKg ? weightN : weightN / 2.205;
@@ -305,6 +301,13 @@ export default function GoalsScreen({ navigation }: Props) {
       calculatedCarbs:    calcResult?.carbs,
     };
     await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile)).catch(() => {});
+  }
+
+  async function saveAndGo(cal: number, protein: number, carbs: number, fat: number) {
+    const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
+    await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(g));
+    setGoals(g);
+    await persistProfile();
     navigation.navigate('MainTabs');
   }
 
@@ -316,6 +319,7 @@ export default function GoalsScreen({ navigation }: Props) {
     const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
     await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(g));
     setGoals(g);
+    await persistProfile();
     navigation.navigate('MainTabs');
   }
 

@@ -144,12 +144,14 @@ const chatSchema = z.object({
   })).max(20).optional(),
 });
 
+// DEPRECATED: GoalsScreen now calculates TDEE locally via nutritionCalculator.ts.
+// Schema updated to accept new app model values so it does not reject valid inputs.
 const tdeeSchema = z.object({
   height_cm: z.number().min(50).max(300),
   weight_kg: z.number().min(20).max(500),
   age: z.number().min(10).max(120),
-  sex: z.enum(['male', 'female']),
-  goal: z.enum(['lose', 'maintain', 'build']),
+  sex: z.enum(['male', 'female', 'other']),
+  goal: z.enum(['lose', 'maintain', 'build', 'lose_fat', 'gain_muscle', 'recomposition']),
   activityDescription: z.string().max(1000).optional(),
 });
 
@@ -793,16 +795,31 @@ app.get('/search', aiLimiter, async (req, res) => {
   const { q } = params;
   console.log(`[/search] query: "${q}"`);
 
+  // Check local common foods first
+  const commonHit = lookupCommonFood(q);
+  const commonResults = commonHit ? [{
+    name: commonHit.name,
+    serving_size: commonHit.serving_size,
+    calories: commonHit.calories,
+    protein: commonHit.protein,
+    carbs: commonHit.carbs,
+    fat: commonHit.fat,
+    quantity: 1,
+    unit: 'pieces',
+    servingDescription: commonHit.serving_size,
+    source: 'common',
+  }] : [];
+
   const [offResults, usdaResults] = await Promise.all([
     searchOpenFoodFacts(q).catch(err => { console.error('[/search] OFF error:', err.message); return []; }),
     searchUSDA(q).catch(err => { console.error('[/search] USDA error:', err.message); return []; }),
   ]);
 
-  console.log(`[/search] OFF: ${offResults.length}, USDA: ${usdaResults.length}`);
+  console.log(`[/search] common: ${commonResults.length}, OFF: ${offResults.length}, USDA: ${usdaResults.length}`);
 
-  // Deduplicate by lowercased name, OFF results first (more precise for branded products)
+  // Deduplicate by lowercased name; common foods prepended so they always appear
   const seen = new Set();
-  const combined = [...offResults, ...usdaResults].filter(r => {
+  const combined = [...commonResults, ...offResults, ...usdaResults].filter(r => {
     const key = r.name.toLowerCase().trim();
     if (seen.has(key)) return false;
     seen.add(key);
@@ -1095,8 +1112,9 @@ app.post('/calculate-tdee', smallJsonBody, aiLimiter, async (req, res) => {
   if (!body) return;
   const { height_cm, weight_kg, age, sex, goal, activityDescription } = body;
 
-  // Mifflin-St Jeor BMR (metric)
-  const bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) + (sex === 'male' ? 5 : -161);
+  // Mifflin-St Jeor BMR (metric); 'other' uses average of male/female offsets (−78)
+  const sexOffset = sex === 'male' ? 5 : sex === 'female' ? -161 : -78;
+  const bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) + sexOffset;
   console.log(`[/calculate-tdee] BMR=${Math.round(bmr)} goal=${goal}`);
 
   let multiplier = 1.55;
@@ -1122,15 +1140,23 @@ app.post('/calculate-tdee', smallJsonBody, aiLimiter, async (req, res) => {
 
   const tdee = Math.round(bmr * multiplier);
 
-  // Goal-based calorie adjustment
-  const calorieAdjust = { lose: -500, maintain: 0, build: 300 };
+  // Goal-based calorie adjustment (new goal keys map to legacy behaviour)
+  const calorieAdjust = {
+    lose: -500, lose_fat: -500,
+    maintain: 0,
+    build: 300, gain_muscle: 300,
+    recomposition: -200,
+  };
   const calories = Math.max(Math.round(tdee + (calorieAdjust[goal] ?? 0)), 1200);
 
   // Macro splits (protein & carbs = 4 cal/g, fat = 9 cal/g)
   const splits = {
-    lose:     { p: 0.40, c: 0.35, f: 0.25 },
-    maintain: { p: 0.30, c: 0.45, f: 0.25 },
-    build:    { p: 0.30, c: 0.50, f: 0.20 },
+    lose:          { p: 0.40, c: 0.35, f: 0.25 },
+    lose_fat:      { p: 0.40, c: 0.35, f: 0.25 },
+    maintain:      { p: 0.30, c: 0.45, f: 0.25 },
+    build:         { p: 0.30, c: 0.50, f: 0.20 },
+    gain_muscle:   { p: 0.30, c: 0.50, f: 0.20 },
+    recomposition: { p: 0.40, c: 0.35, f: 0.25 },
   };
   const split = splits[goal] ?? splits.maintain;
   const protein = Math.round((calories * split.p) / 4);

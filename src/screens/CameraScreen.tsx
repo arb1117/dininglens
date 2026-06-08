@@ -447,17 +447,16 @@ export default function CameraScreen({ navigation, route }: Props) {
               <Text style={styles.barcodeRecoveryTitle}>Product not found</Text>
               <Text style={styles.barcodeRecoveryDesc}>
                 {barcodeNotFoundCode
-                  ? 'This barcode isn\'t in the database yet.'
+                  ? 'This barcode isn\'t in the database yet. Type the product name to search.'
                   : 'Lookup failed — try again or use one of the options below.'}
               </Text>
 
               <TouchableOpacity
                 style={styles.barcodeRecoveryBtn}
                 onPress={() => {
-                  const code = barcodeNotFoundCode;
                   setBarcodeNotFoundCode(null);
                   setBarcodeError(null);
-                  navigation.navigate('Search', { query: code ?? '' });
+                  navigation.navigate('Search', { query: '' });
                 }}
               >
                 <Text style={styles.barcodeRecoveryBtnText}>🔍  Search by product name</Text>

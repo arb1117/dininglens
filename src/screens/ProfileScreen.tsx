@@ -8,9 +8,10 @@ import type { RootStackParamList } from '../../App';
 const APP_VERSION = '1.0.0-beta';
 
 const PRESET_LABELS: Record<string, string> = {
-  lose:     '🔥 Lose Weight',
-  maintain: '⚖️ Stay the Same',
-  build:    '💪 Build Muscle',
+  lose:          '🔥 Lose Fat',
+  maintain:      '⚖️ Maintain Weight',
+  build:         '💪 Build Muscle',
+  recomposition: '🔄 Recompose',
 };
 
 export default function ProfileScreen() {

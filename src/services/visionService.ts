@@ -12,6 +12,12 @@ export type DetectedItem = {
   protein?: number;
   carbs?: number;
   fat?: number;
+  // Structured quantity — new fields returned by updated AI prompt
+  quantity?: number;
+  unit?: string;
+  count?: number;
+  sizeDescription?: string;
+  servingDescription?: string;
 };
 
 export type AnalysisResult = {

@@ -8,11 +8,34 @@ const GOALS_KEY        = '@dininglens_goals';
 const LAST_LOGGED_KEY  = '@dininglens_last_logged';
 
 export type UserGoals = {
-  preset: 'lose' | 'maintain' | 'build';
+  preset: 'lose' | 'maintain' | 'build' | 'recomposition';
   calories: number;
   protein: number;
   carbs: number;
   fat: number;
+};
+
+export type UserProfile = {
+  useMetric?: boolean;
+  heightFt?: number;
+  heightIn?: number;
+  heightCm?: number;
+  weightLbs?: number;
+  weightKg?: number;
+  sex?: 'male' | 'female' | 'other';
+  age?: number;
+  activityLevel?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'extremely_active';
+  activityDescription?: string;
+  dailySteps?: number;
+  workoutsPerWeek?: number;
+  workoutIntensity?: 'light' | 'moderate' | 'intense';
+  jobType?: 'desk' | 'lightly_active' | 'very_active';
+  bodyGoal?: 'lose_fat' | 'maintain' | 'gain_muscle' | 'recomposition';
+  calculatedCalories?: number;
+  calculatedProtein?: number;
+  calculatedFat?: number;
+  calculatedCarbs?: number;
+  calorieOverride?: number;
 };
 
 const DEFAULT_GOALS: UserGoals = {
@@ -44,6 +67,12 @@ export type MacroItem = {
   protein: number;
   carbs: number;
   fat: number;
+  // Optional structured quantity fields — absent on older logged meals
+  quantity?: number;
+  unit?: string;
+  count?: number;
+  sizeDescription?: string;
+  servingDescription?: string;
 };
 
 export type LoggedMeal = {

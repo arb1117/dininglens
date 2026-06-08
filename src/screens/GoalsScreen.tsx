@@ -1,26 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
+  ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useMealContext, UserGoals } from '../context/MealContext';
-import { API_BASE_URL } from '../config/api';
+import {
+  ActivityLevel,
+  ACTIVITY_LABELS,
+  ACTIVITY_DESCRIPTIONS,
+  calculateAll,
+  estimateActivityLevel,
+  goalKeyToBodyGoal,
+} from '../utils/nutritionCalculator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Goals'>;
 
-type GoalKey = 'lose' | 'maintain' | 'build';
+type GoalKey = 'lose' | 'maintain' | 'build' | 'recomposition';
 type Step = 'goal' | 'profile' | 'activity' | 'result' | 'manual';
 
 const GOALS_KEY   = '@dininglens_goals';
 const PROFILE_KEY = '@dininglens_profile';
 
 const GOAL_CARDS: { key: GoalKey; emoji: string; label: string; desc: string }[] = [
-  { key: 'lose',     emoji: '🔥', label: 'Lose Weight',    desc: 'Burn fat and slim down' },
-  { key: 'maintain', emoji: '⚖️', label: 'Stay the Same',  desc: 'Maintain my current weight' },
-  { key: 'build',    emoji: '💪', label: 'Build Muscle',   desc: 'Get stronger and gain mass' },
+  { key: 'lose',          emoji: '🔥', label: 'Lose Fat',         desc: 'Burn fat with a calorie deficit' },
+  { key: 'maintain',      emoji: '⚖️', label: 'Maintain Weight',   desc: 'Stay at my current weight' },
+  { key: 'build',         emoji: '💪', label: 'Build Muscle',      desc: 'Get stronger and gain mass' },
+  { key: 'recomposition', emoji: '🔄', label: 'Recompose',         desc: 'Lose fat and build muscle together' },
+];
+
+const ACTIVITY_LEVELS: ActivityLevel[] = [
+  'sedentary', 'lightly_active', 'moderately_active', 'very_active', 'extremely_active',
 ];
 
 function fmtCal(n: number) {
@@ -99,20 +111,27 @@ export default function GoalsScreen({ navigation }: Props) {
   const [useKg,     setUseKg]     = useState(false);
   const [weight,    setWeight]    = useState('');
   const [age,       setAge]       = useState('');
-  const [sex,       setSex]       = useState<'male' | 'female' | null>(null);
+  const [sex,       setSex]       = useState<'male' | 'female' | 'other' | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
-  // Step 3 — activity
-  const [activityDesc,  setActivityDesc]  = useState('');
-  const [calculating,   setCalculating]   = useState(false);
-  const [calcError,     setCalcError]     = useState<string | null>(null);
+  // Step 3 — activity (structured + free text)
+  const [dailySteps,       setDailySteps]       = useState('');
+  const [workoutsPerWeek,  setWorkoutsPerWeek]  = useState('');
+  const [workoutIntensity, setWorkoutIntensity] = useState<'light' | 'moderate' | 'intense' | null>(null);
+  const [jobType,          setJobType]          = useState<'desk' | 'lightly_active' | 'very_active' | null>(null);
+  const [activityDesc,     setActivityDesc]     = useState('');
+  const [activityLevel,    setActivityLevel]    = useState<ActivityLevel>('moderately_active');
+  const [levelOverridden,  setLevelOverridden]  = useState(false);
 
-  // Step 4 — AI result
-  const [aiResult, setAiResult] = useState<{
+  // Step 4 — calculated result
+  const [calcResult, setCalcResult] = useState<{
     explanation: string;
     calories: number;
     protein: number;
     carbs: number;
     fat: number;
+    bmr: number;
+    tdee: number;
   } | null>(null);
 
   // Manual override / power user path
@@ -121,13 +140,13 @@ export default function GoalsScreen({ navigation }: Props) {
   const [manCarbs,   setManCarbs]   = useState('220');
   const [manFat,     setManFat]     = useState('70');
 
-  // ── Load existing data on mount (returning user editing from Profile) ────────
+  // ── Load existing data on mount (returning user editing from Profile) ─────
   useEffect(() => {
     AsyncStorage.getItem(GOALS_KEY).then(raw => {
       if (!raw) return;
       try {
         const g = JSON.parse(raw) as UserGoals;
-        if (GOAL_CARDS.find(c => c.key === g.preset)) setSelectedGoal(g.preset);
+        if (GOAL_CARDS.find(c => c.key === g.preset)) setSelectedGoal(g.preset as GoalKey);
         setManCal(String(g.calories));
         setManProtein(String(g.protein));
         setManCarbs(String(g.carbs));
@@ -147,11 +166,29 @@ export default function GoalsScreen({ navigation }: Props) {
         setAge(p.age ? String(p.age) : '');
         setSex(p.sex ?? null);
         setActivityDesc(p.activityDescription ?? '');
+        if (p.dailySteps) setDailySteps(String(p.dailySteps));
+        if (p.workoutsPerWeek !== undefined) setWorkoutsPerWeek(String(p.workoutsPerWeek));
+        if (p.workoutIntensity) setWorkoutIntensity(p.workoutIntensity);
+        if (p.jobType) setJobType(p.jobType);
+        if (p.activityLevel) setActivityLevel(p.activityLevel);
       } catch {}
     });
   }, []);
 
-  // ── Unit toggles with auto-conversion ────────────────────────────────────────
+  // ── Re-estimate activity level whenever structured fields change ──────────
+  useEffect(() => {
+    if (levelOverridden) return;
+    const estimated = estimateActivityLevel({
+      dailySteps:      dailySteps ? parseInt(dailySteps) : undefined,
+      workoutsPerWeek: workoutsPerWeek ? parseInt(workoutsPerWeek) : undefined,
+      workoutIntensity: workoutIntensity ?? undefined,
+      jobType:         jobType ?? undefined,
+      description:     activityDesc,
+    });
+    setActivityLevel(estimated);
+  }, [dailySteps, workoutsPerWeek, workoutIntensity, jobType, activityDesc, levelOverridden]);
+
+  // ── Unit toggles with auto-conversion ────────────────────────────────────
   function toggleMetric() {
     if (!useMetric) {
       const ft = parseInt(heightFt) || 5;
@@ -172,73 +209,100 @@ export default function GoalsScreen({ navigation }: Props) {
     setUseKg(v => !v);
   }
 
-  // ── Profile complete check ────────────────────────────────────────────────────
-  const profileComplete =
-    !!sex &&
-    !!(parseInt(age) >= 10) &&
-    !!(parseFloat(weight) > 0) &&
-    !!(useMetric
-      ? parseFloat(heightCm) > 0
-      : (parseInt(heightFt) > 0));
+  // ── Profile validation ────────────────────────────────────────────────────
+  function validateProfile(): string | null {
+    const ageN = parseInt(age);
+    if (!ageN || ageN < 10 || ageN > 120) return 'Please enter a valid age (10–120).';
 
-  // ── TDEE calculation ─────────────────────────────────────────────────────────
-  async function handleCalculate() {
-    if (!profileComplete) return;
-    setCalculating(true);
-    setCalcError(null);
+    const weightN = parseFloat(weight);
+    if (!weightN || weightN <= 0) return 'Please enter your weight.';
+    const weightLbs = useKg ? weightN * 2.205 : weightN;
+    if (weightLbs < 50 || weightLbs > 700) return 'Please enter a weight between 50–700 lbs.';
+
+    if (useMetric) {
+      const cmN = parseFloat(heightCm);
+      if (!cmN || cmN < 91 || cmN > 244) return 'Please enter a height between 91–244 cm.';
+    } else {
+      const ft = parseInt(heightFt) || 0;
+      const inches = parseInt(heightIn) || 0;
+      const totalIn = ft * 12 + inches;
+      if (totalIn < 36 || totalIn > 96) return 'Please enter a height between 3–8 feet.';
+    }
+
+    if (!sex) return 'Please select your biological sex.';
+    return null;
+  }
+
+  const profileComplete = !validateProfile();
+
+  // ── Calculate locally ─────────────────────────────────────────────────────
+  function handleCalculate() {
+    const weightN   = parseFloat(weight);
+    const weightLbs = useKg ? weightN * 2.205 : weightN;
+    const weightKg  = useKg ? weightN : weightN / 2.205;
 
     const ft = parseInt(heightFt) || 5;
     const inches = parseInt(heightIn) || 10;
     const cm = useMetric
       ? parseFloat(heightCm)
       : Math.round((ft * 12 + inches) * 2.54);
-    const kg = useKg
-      ? parseFloat(weight)
-      : parseFloat(weight) / 2.205;
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/calculate-tdee`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          height_cm: Math.round(cm),
-          weight_kg: Math.round(kg * 10) / 10,
-          age: parseInt(age),
-          sex,
-          goal: selectedGoal,
-          activityDescription: activityDesc.trim(),
-        }),
-      });
-      if (!res.ok) throw new Error(`Server ${res.status}`);
-      const data = await res.json();
-      setAiResult({
-        explanation: data.explanation,
-        calories:    data.calories,
-        protein:     data.protein,
-        carbs:       data.carbs,
-        fat:         data.fat,
-      });
-      setStep('result');
-    } catch {
-      setCalcError('Calculation failed — try again or set your targets manually.');
-    } finally {
-      setCalculating(false);
-    }
+    const ageN = parseInt(age);
+    const bodyGoal = goalKeyToBodyGoal(selectedGoal);
+    const result = calculateAll({
+      weightKg: Math.round(weightKg * 10) / 10,
+      weightLbs: Math.round(weightLbs * 10) / 10,
+      heightCm: Math.round(cm),
+      age: ageN,
+      sex: sex!,
+      activityLevel,
+      bodyGoal,
+    });
+
+    const goalLabel = GOAL_CARDS.find(c => c.key === selectedGoal)?.label ?? 'your goal';
+    const explanation =
+      `Estimated from your height, weight, age, sex, and ${ACTIVITY_LABELS[activityLevel].toLowerCase()} activity level. ` +
+      `Your base metabolic rate is ${fmtCal(result.bmr)} cal/day. ` +
+      `With your activity level, that's ${fmtCal(result.tdee)} calories burned daily. ` +
+      `Your target for "${goalLabel}" is ${fmtCal(result.calories)} cal/day.`;
+
+    setCalcResult({ explanation, ...result });
+    setStep('result');
   }
 
-  // ── Save helpers ──────────────────────────────────────────────────────────────
+  // ── Save helpers ──────────────────────────────────────────────────────────
   async function saveAndGo(cal: number, protein: number, carbs: number, fat: number) {
     const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
     await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(g));
     setGoals(g);
 
+    const weightN   = parseFloat(weight) || 0;
+    const weightLbs = useKg ? weightN * 2.205 : weightN;
+    const weightKg  = useKg ? weightN : weightN / 2.205;
+    const ft = parseInt(heightFt) || 0;
+
     const profile = {
-      useMetric, heightFt: parseInt(heightFt) || 0, heightIn: parseInt(heightIn) || 0,
-      heightCm: parseFloat(heightCm) || 0,
-      useKg, weight: parseFloat(weight) || 0,
+      useMetric,
+      heightFt: ft,
+      heightIn: parseInt(heightIn) || 0,
+      heightCm: useMetric ? parseFloat(heightCm) || 0 : Math.round((ft * 12 + (parseInt(heightIn) || 0)) * 2.54),
+      useKg,
+      weight: weightN,
+      weightLbs: Math.round(weightLbs * 10) / 10,
+      weightKg: Math.round(weightKg * 10) / 10,
       age: parseInt(age) || 0,
       sex,
       activityDescription: activityDesc,
+      dailySteps:      dailySteps ? parseInt(dailySteps) : undefined,
+      workoutsPerWeek: workoutsPerWeek ? parseInt(workoutsPerWeek) : undefined,
+      workoutIntensity: workoutIntensity ?? undefined,
+      jobType:         jobType ?? undefined,
+      activityLevel,
+      bodyGoal:        goalKeyToBodyGoal(selectedGoal),
+      calculatedCalories: calcResult?.calories,
+      calculatedProtein:  calcResult?.protein,
+      calculatedFat:      calcResult?.fat,
+      calculatedCarbs:    calcResult?.carbs,
     };
     await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile)).catch(() => {});
     navigation.navigate('MainTabs');
@@ -256,26 +320,24 @@ export default function GoalsScreen({ navigation }: Props) {
   }
 
   function openManualFromResult() {
-    if (aiResult) {
-      setManCal(String(aiResult.calories));
-      setManProtein(String(aiResult.protein));
-      setManCarbs(String(aiResult.carbs));
-      setManFat(String(aiResult.fat));
+    if (calcResult) {
+      setManCal(String(calcResult.calories));
+      setManProtein(String(calcResult.protein));
+      setManCarbs(String(calcResult.carbs));
+      setManFat(String(calcResult.fat));
     }
     setStep('manual');
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ─── RENDER ───────────────────────────────────────────────────────────────
 
-  // ── Step 1 — Goal selection ───────────────────────────────────────────────────
+  // ── Step 1 — Goal selection ───────────────────────────────────────────────
   if (step === 'goal') {
     return (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
           <Text style={s.title}>What's your goal?</Text>
-          <Text style={s.subtitle}>We'll calculate your personal targets in 3 quick questions.</Text>
+          <Text style={s.subtitle}>We'll calculate your personal targets in 2 quick steps.</Text>
 
           {GOAL_CARDS.map(card => {
             const active = selectedGoal === card.key;
@@ -298,7 +360,6 @@ export default function GoalsScreen({ navigation }: Props) {
             );
           })}
 
-          {/* Power-user escape hatch */}
           <TouchableOpacity
             style={[s.card, s.cardEscape]}
             onPress={() => setStep('manual')}
@@ -325,7 +386,7 @@ export default function GoalsScreen({ navigation }: Props) {
     );
   }
 
-  // ── Step 2 — Quick profile ────────────────────────────────────────────────────
+  // ── Step 2 — Quick profile ─────────────────────────────────────────────────
   if (step === 'profile') {
     return (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -378,25 +439,33 @@ export default function GoalsScreen({ navigation }: Props) {
           <Text style={[s.fieldLabel, { marginTop: 20 }]}>Biological sex</Text>
           <Text style={s.fieldNote}>Used for the BMR formula — not stored for any other purpose.</Text>
           <View style={[s.inlineRow, { marginTop: 10 }]}>
-            <TouchableOpacity
-              style={[s.sexBtn, sex === 'male' && s.sexBtnActive]}
-              onPress={() => setSex('male')}
-            >
-              <Text style={[s.sexBtnText, sex === 'male' && s.sexBtnTextActive]}>Male</Text>
-            </TouchableOpacity>
-            <View style={s.rowGap} />
-            <TouchableOpacity
-              style={[s.sexBtn, sex === 'female' && s.sexBtnActive]}
-              onPress={() => setSex('female')}
-            >
-              <Text style={[s.sexBtnText, sex === 'female' && s.sexBtnTextActive]}>Female</Text>
-            </TouchableOpacity>
+            {(['male', 'female', 'other'] as const).map(opt => (
+              <TouchableOpacity
+                key={opt}
+                style={[s.sexBtn, sex === opt && s.sexBtnActive]}
+                onPress={() => setSex(opt)}
+              >
+                <Text style={[s.sexBtnText, sex === opt && s.sexBtnTextActive]}>
+                  {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
+          {profileError && (
+            <View style={s.errorBox}>
+              <Text style={s.errorText}>{profileError}</Text>
+            </View>
+          )}
+
           <TouchableOpacity
-            style={[s.primaryBtn, { marginTop: 32 }, !profileComplete && s.primaryBtnDisabled]}
-            onPress={() => setStep('activity')}
-            disabled={!profileComplete}
+            style={[s.primaryBtn, { marginTop: 32 }]}
+            onPress={() => {
+              const err = validateProfile();
+              if (err) { setProfileError(err); return; }
+              setProfileError(null);
+              setStep('activity');
+            }}
           >
             <Text style={s.primaryBtnText}>Continue →</Text>
           </TouchableOpacity>
@@ -409,57 +478,105 @@ export default function GoalsScreen({ navigation }: Props) {
     );
   }
 
-  // ── Step 3 — Activity description ─────────────────────────────────────────────
+  // ── Step 3 — Activity ──────────────────────────────────────────────────────
   if (step === 'activity') {
     return (
-      <View style={{ flex: 1 }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-          <BackLink onPress={() => { setCalcError(null); setStep('profile'); }} />
+          <BackLink onPress={() => setStep('profile')} />
           <Text style={s.stepNote}>Step 2 of 2</Text>
-          <Text style={s.title}>Describe your lifestyle</Text>
-          <Text style={s.subtitle}>Our AI uses this to estimate how active you are — no checkboxes needed.</Text>
+          <Text style={s.title}>Activity level</Text>
+          <Text style={s.subtitle}>Fill in what you know — we'll estimate the rest. All fields are optional.</Text>
 
+          {/* Daily steps */}
+          <Text style={s.fieldLabel}>Daily steps (optional)</Text>
+          <NumInput value={dailySteps} onChangeText={setDailySteps} placeholder="e.g. 8000" suffix="steps/day" maxLength={6} />
+
+          {/* Workouts per week */}
+          <Text style={[s.fieldLabel, { marginTop: 20 }]}>Workouts per week (optional)</Text>
+          <NumInput value={workoutsPerWeek} onChangeText={setWorkoutsPerWeek} placeholder="e.g. 3" suffix="days/week" maxLength={2} />
+
+          {/* Workout intensity */}
+          {workoutsPerWeek && parseInt(workoutsPerWeek) > 0 && (
+            <>
+              <Text style={[s.fieldLabel, { marginTop: 20 }]}>Workout intensity</Text>
+              <View style={s.inlineRow}>
+                {(['light', 'moderate', 'intense'] as const).map(opt => (
+                  <TouchableOpacity
+                    key={opt}
+                    style={[s.triBtn, workoutIntensity === opt && s.triBtnActive]}
+                    onPress={() => setWorkoutIntensity(workoutIntensity === opt ? null : opt)}
+                  >
+                    <Text style={[s.triBtnText, workoutIntensity === opt && s.triBtnTextActive]}>
+                      {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          {/* Job type */}
+          <Text style={[s.fieldLabel, { marginTop: 20 }]}>Job type</Text>
+          <View style={s.inlineRow}>
+            {([
+              { key: 'desk', label: 'Desk job' },
+              { key: 'lightly_active', label: 'On my feet' },
+              { key: 'very_active', label: 'Very active' },
+            ] as const).map(opt => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[s.triBtn, jobType === opt.key && s.triBtnActive, { flex: 1 }]}
+                onPress={() => setJobType(jobType === opt.key ? null : opt.key)}
+              >
+                <Text style={[s.triBtnText, jobType === opt.key && s.triBtnTextActive]}>{opt.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Free text */}
+          <Text style={[s.fieldLabel, { marginTop: 20 }]}>Or describe your typical day (optional)</Text>
           <TextInput
             style={s.activityInput}
             value={activityDesc}
-            onChangeText={setActivityDesc}
-            placeholder="Describe a typical day — what do you do for work, how often do you exercise, how active are you outside the gym?"
+            onChangeText={text => { setActivityDesc(text); setLevelOverridden(false); }}
+            placeholder="e.g. I walk 8,000 steps most days, lift 3×/week, and sit at a desk otherwise."
             placeholderTextColor="#555"
             multiline
             textAlignVertical="top"
             maxLength={400}
           />
 
-          <View style={s.examplesBox}>
-            <Text style={s.examplesTitle}>Examples</Text>
-            <Text style={s.exampleText}>"I sit at a desk all day but lift weights 4× a week and walk 20 min during lunch."</Text>
-            <Text style={s.exampleText}>"I'm a nurse on my feet 12-hour shifts, 3 days a week. No structured gym time."</Text>
-            <Text style={s.exampleText}>"Mostly sedentary — remote work, occasional walks on weekends."</Text>
+          {/* Estimated level + manual override */}
+          <View style={s.estimatedLevelBox}>
+            <Text style={s.estimatedLevelLabel}>
+              {levelOverridden ? 'Activity level (set manually)' : 'Estimated activity level'}
+            </Text>
+            <Text style={s.estimatedLevelValue}>{ACTIVITY_LABELS[activityLevel]}</Text>
+            <Text style={s.estimatedLevelDesc}>{ACTIVITY_DESCRIPTIONS[activityLevel]}</Text>
+            <Text style={[s.fieldLabel, { marginTop: 12, marginBottom: 8 }]}>Tap to change</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {ACTIVITY_LEVELS.map(lvl => (
+                  <TouchableOpacity
+                    key={lvl}
+                    style={[s.levelChip, activityLevel === lvl && s.levelChipActive]}
+                    onPress={() => { setActivityLevel(lvl); setLevelOverridden(true); }}
+                  >
+                    <Text style={[s.levelChipText, activityLevel === lvl && s.levelChipTextActive]}>
+                      {ACTIVITY_LABELS[lvl]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
           </View>
 
-          {calcError !== null && (
-            <View style={s.errorBox}>
-              <Text style={s.errorText}>{calcError}</Text>
-              <TouchableOpacity onPress={() => { setCalcError(null); setStep('manual'); }} style={s.errorLink}>
-                <Text style={s.errorLinkText}>Set targets manually instead →</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
           <TouchableOpacity
-            style={[s.primaryBtn, (calculating || activityDesc.trim().length < 10) && s.primaryBtnDisabled]}
+            style={[s.primaryBtn, { marginTop: 28 }]}
             onPress={handleCalculate}
-            disabled={calculating || activityDesc.trim().length < 10}
           >
-            {calculating ? (
-              <View style={s.loadingRow}>
-                <ActivityIndicator color="#0F0F0F" size="small" />
-                <Text style={[s.primaryBtnText, { marginLeft: 10 }]}>Analyzing your lifestyle…</Text>
-              </View>
-            ) : (
-              <Text style={s.primaryBtnText}>Calculate my targets →</Text>
-            )}
+            <Text style={s.primaryBtnText}>Calculate my targets →</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={s.skipLink} onPress={() => setStep('manual')}>
@@ -467,59 +584,49 @@ export default function GoalsScreen({ navigation }: Props) {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
-      {calculating && (
-        <View style={s.calcOverlay}>
-          <ActivityIndicator size="large" color="#00E5A0" />
-          <Text style={s.calcOverlayText}>Calculating your targets...</Text>
-        </View>
-      )}
-      </View>
     );
   }
 
-  // ── Step 4 — AI result ────────────────────────────────────────────────────────
-  if (step === 'result' && aiResult) {
+  // ── Step 4 — Result ────────────────────────────────────────────────────────
+  if (step === 'result' && calcResult) {
     const goalLabel = GOAL_CARDS.find(c => c.key === selectedGoal)?.label ?? 'your goal';
     return (
       <ScrollView style={s.container} contentContainerStyle={s.content}>
         <BackLink onPress={() => setStep('activity')} />
         <Text style={s.title}>Here's what we recommend</Text>
 
-        {/* AI explanation */}
         <View style={s.explanationBox}>
-          <Text style={s.explanationText}>{aiResult.explanation}</Text>
+          <Text style={s.explanationText}>{calcResult.explanation}</Text>
         </View>
 
-        {/* Goal badge */}
         <View style={s.goalBadge}>
           <Text style={s.goalBadgeText}>{GOAL_CARDS.find(c => c.key === selectedGoal)?.emoji} {goalLabel}</Text>
         </View>
 
-        {/* Big calorie number */}
         <View style={s.calCard}>
-          <Text style={s.calNum}>{fmtCal(aiResult.calories)}</Text>
+          <Text style={s.calNum}>{fmtCal(calcResult.calories)}</Text>
           <Text style={s.calLabel}>calories per day</Text>
+          <Text style={s.calSub}>BMR {fmtCal(calcResult.bmr)} · TDEE {fmtCal(calcResult.tdee)}</Text>
         </View>
 
-        {/* Macro breakdown */}
         <View style={s.macroRow}>
           <View style={[s.macroChip, { backgroundColor: '#1A3A1A' }]}>
-            <Text style={[s.macroChipVal, { color: '#5CFF7C' }]}>{aiResult.protein}g</Text>
+            <Text style={[s.macroChipVal, { color: '#5CFF7C' }]}>{calcResult.protein}g</Text>
             <Text style={s.macroChipLabel}>protein</Text>
           </View>
           <View style={[s.macroChip, { backgroundColor: '#3A2800' }]}>
-            <Text style={[s.macroChipVal, { color: '#FFA040' }]}>{aiResult.carbs}g</Text>
+            <Text style={[s.macroChipVal, { color: '#FFA040' }]}>{calcResult.carbs}g</Text>
             <Text style={s.macroChipLabel}>carbs</Text>
           </View>
           <View style={[s.macroChip, { backgroundColor: '#3A1010' }]}>
-            <Text style={[s.macroChipVal, { color: '#FF6B6B' }]}>{aiResult.fat}g</Text>
+            <Text style={[s.macroChipVal, { color: '#FF6B6B' }]}>{calcResult.fat}g</Text>
             <Text style={s.macroChipLabel}>fat</Text>
           </View>
         </View>
 
         <Text style={s.disclaimer}>These are estimates. Adjust anytime in your profile.</Text>
 
-        <TouchableOpacity style={s.primaryBtn} onPress={() => saveAndGo(aiResult.calories, aiResult.protein, aiResult.carbs, aiResult.fat)}>
+        <TouchableOpacity style={s.primaryBtn} onPress={() => saveAndGo(calcResult.calories, calcResult.protein, calcResult.carbs, calcResult.fat)}>
           <Text style={s.primaryBtnText}>Looks good — let's go ✓</Text>
         </TouchableOpacity>
 
@@ -530,12 +637,11 @@ export default function GoalsScreen({ navigation }: Props) {
     );
   }
 
-  // ── Manual entry (power user or override) ─────────────────────────────────────
-  // step === 'manual'
+  // ── Manual entry (power user or override) ─────────────────────────────────
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-        <BackLink onPress={() => setStep(aiResult ? 'result' : 'goal')} />
+        <BackLink onPress={() => setStep(calcResult ? 'result' : 'goal')} />
         <Text style={s.title}>Set your targets</Text>
         <Text style={s.subtitle}>Enter the daily numbers you want to hit.</Text>
 
@@ -582,7 +688,6 @@ const s = StyleSheet.create({
   title:    { fontSize: 28, fontWeight: '800', color: '#FFFFFF', marginBottom: 8 },
   subtitle: { fontSize: 15, color: '#8A8A8A', marginBottom: 28, lineHeight: 22 },
 
-  // Goal cards
   card: {
     backgroundColor: '#1A1A1A', borderRadius: 14, padding: 18, marginBottom: 12,
     borderWidth: 2, borderColor: '#2A2A2A',
@@ -597,12 +702,10 @@ const s = StyleSheet.create({
   cardDesc:    { fontSize: 13, color: '#555' },
   dot: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#00E5A0' },
 
-  // Buttons
   primaryBtn: {
     backgroundColor: '#00E5A0', borderRadius: 14,
     paddingVertical: 18, alignItems: 'center',
   },
-  primaryBtnDisabled: { opacity: 0.4 },
   primaryBtnText: { color: '#0F0F0F', fontSize: 17, fontWeight: '700' },
 
   secondaryBtn: {
@@ -614,7 +717,6 @@ const s = StyleSheet.create({
   skipLink:     { paddingVertical: 14, alignItems: 'center' },
   skipLinkText: { fontSize: 14, color: '#555' },
 
-  // Profile form
   fieldLabel: { fontSize: 14, fontWeight: '700', color: '#8A8A8A', marginBottom: 8 },
   fieldNote:  { fontSize: 12, color: '#444', marginBottom: 4, lineHeight: 16 },
 
@@ -640,28 +742,41 @@ const s = StyleSheet.create({
   sexBtnText:       { fontSize: 16, fontWeight: '700', color: '#8A8A8A' },
   sexBtnTextActive: { color: '#00E5A0' },
 
-  // Activity step
+  triBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: 10,
+    backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A',
+    alignItems: 'center',
+  },
+  triBtnActive: { borderColor: '#00E5A0', backgroundColor: '#0A2A1A' },
+  triBtnText: { fontSize: 13, fontWeight: '600', color: '#8A8A8A' },
+  triBtnTextActive: { color: '#00E5A0' },
+
   activityInput: {
     backgroundColor: '#1A1A1A', borderRadius: 14, padding: 16,
     fontSize: 15, color: '#FFFFFF', lineHeight: 22,
     borderWidth: 1, borderColor: '#2A2A2A',
-    minHeight: 140, marginBottom: 16,
+    minHeight: 110, marginBottom: 16,
   },
-  examplesBox: {
-    backgroundColor: '#0F1A0F', borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: '#1A3A1A', marginBottom: 20,
+
+  estimatedLevelBox: {
+    backgroundColor: '#0A1A0A', borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: '#1A3A1A',
   },
-  examplesTitle: { fontSize: 11, fontWeight: '700', color: '#5CFF7C', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
-  exampleText:   { fontSize: 13, color: '#6A9A6A', marginBottom: 6, lineHeight: 18, fontStyle: 'italic' },
+  estimatedLevelLabel: { fontSize: 11, fontWeight: '700', color: '#5CFF7C', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  estimatedLevelValue: { fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
+  estimatedLevelDesc:  { fontSize: 13, color: '#6A9A6A', lineHeight: 18 },
 
-  loadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  levelChip: {
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#2A2A2A',
+  },
+  levelChipActive: { backgroundColor: '#00E5A0' },
+  levelChipText: { fontSize: 12, fontWeight: '600', color: '#8A8A8A' },
+  levelChipTextActive: { color: '#0F0F0F' },
 
-  errorBox:  { backgroundColor: '#2A1010', borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#5A2020' },
-  errorText: { fontSize: 14, color: '#FF6B6B', marginBottom: 8 },
-  errorLink: {},
-  errorLinkText: { fontSize: 13, color: '#FF9500', fontWeight: '600' },
+  errorBox:  { backgroundColor: '#2A1010', borderRadius: 12, padding: 14, marginTop: 16, borderWidth: 1, borderColor: '#5A2020' },
+  errorText: { fontSize: 14, color: '#FF6B6B' },
 
-  // Result step
   explanationBox: {
     backgroundColor: '#0A2A1A', borderRadius: 12, padding: 16,
     borderWidth: 1, borderColor: '#1A4A2A', marginBottom: 20,
@@ -682,6 +797,7 @@ const s = StyleSheet.create({
   },
   calNum:   { fontSize: 52, fontWeight: '900', color: '#FFFFFF' },
   calLabel: { fontSize: 16, color: '#8A8A8A', marginTop: 4 },
+  calSub:   { fontSize: 12, color: '#555', marginTop: 6 },
 
   macroRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   macroChip: { flex: 1, borderRadius: 14, padding: 14, alignItems: 'center' },
@@ -690,22 +806,6 @@ const s = StyleSheet.create({
 
   disclaimer: { fontSize: 12, color: '#444', textAlign: 'center', marginBottom: 24 },
 
-  // Manual step
   manualRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   manualLabel: { fontSize: 16, color: '#FFFFFF', fontWeight: '600', flex: 1 },
-
-  // Calculating overlay
-  calcOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15,15,15,0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 20,
-  },
-  calcOverlayText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
 });

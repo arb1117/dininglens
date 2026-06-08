@@ -448,19 +448,55 @@ export default function EstimateScreen({ navigation, route }: Props) {
     const mealItems: MacroItem[] = items.map(item => {
       const portion = getPortionFor(item.id);
       const scaled = getScaled(item, portion);
-      const hasQuantityEdit = quantityMultipliers[item.id] !== undefined;
-      const portionLabel = hasQuantityEdit
-        ? (item.servingDescription ?? item.name)
-        : VISUAL_LABELS[portion].label;
+
+      const isCountable = item.count !== undefined && item.count > 0;
+      const isMeasurable =
+        item.quantity !== undefined &&
+        item.unit &&
+        item.unit !== 'count' &&
+        item.unit !== 'pieces';
+
+      let finalCount: number | undefined;
+      let finalQuantity: number | undefined = item.quantity;
+      let finalUnit: string | undefined = item.unit;
+      let finalServingDescription: string | undefined = item.servingDescription;
+      let portionLabel: string;
+
+      if (isCountable) {
+        const rawCount =
+          parseInt(countEdits[item.id] ?? String(item.count), 10) || item.count!;
+        finalCount = rawCount;
+        finalQuantity = item.quantity
+          ? round1(item.quantity * (rawCount / item.count!))
+          : undefined;
+        // Build human description: "3 medium bananas"
+        finalServingDescription = [String(rawCount), item.sizeDescription, item.name]
+          .filter(Boolean)
+          .join(' ');
+        portionLabel = finalServingDescription;
+      } else if (isMeasurable) {
+        const rawAmt =
+          parseFloat(amountEdits[item.id] ?? String(item.quantity)) || item.quantity!;
+        finalQuantity = round1(rawAmt);
+        finalUnit = unitSelections[item.id] ?? item.unit;
+        finalServingDescription = `${rawAmt} ${finalUnit} ${item.name}`.trim();
+        portionLabel = finalServingDescription;
+      } else {
+        const hasQuantityEdit = quantityMultipliers[item.id] !== undefined;
+        portionLabel = hasQuantityEdit
+          ? (item.servingDescription ?? item.name)
+          : VISUAL_LABELS[portion].label;
+      }
+
       return {
         name: item.name,
         portion: portionLabel,
         ...scaled,
-        quantity: item.quantity,
-        unit: item.unit,
-        count: item.count ? Math.round(item.count * (quantityMultipliers[item.id] ?? 1)) : undefined,
+        quantity: finalQuantity,
+        unit: finalUnit,
+        count: finalCount,
         sizeDescription: item.sizeDescription,
-        servingDescription: item.servingDescription,
+        servingDescription: finalServingDescription,
       };
     });
     addMeal({ id: String(Date.now()), timestamp: new Date().toISOString(), period: pickedPeriod, items: mealItems, totals });

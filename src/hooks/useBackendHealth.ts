@@ -35,7 +35,9 @@ export function useBackendHealth() {
     } catch {
       clearTimeout(wakingTimer);
       clearTimeout(timeoutTimer);
-      if (!ctrl.signal.aborted) setStatus('unreachable');
+      // ctrl === abortRef.current means we're still the active check (not superseded by a newer
+      // check() call). Covers both network failures and our own 40s timeout abort.
+      if (ctrl === abortRef.current) setStatus('unreachable');
     }
   }, []);
 

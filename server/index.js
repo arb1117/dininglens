@@ -285,6 +285,7 @@ function validateAnalysisResult(raw) {
       const rawCalories = Number(item.calories) || 0;
       if (rawCalories > 5000) return null;
       const calories = Math.max(0, rawCalories);
+      const sanitizedStr = (v) => (typeof v === 'string' ? v.trim().slice(0, 200) : undefined);
       return {
         ...item,
         name,
@@ -295,6 +296,12 @@ function validateAnalysisResult(raw) {
         portionMultiplier:       clampNum(item.portionMultiplier,       0.1, 5.0, 1.0),
         confidence:              clampNum(item.confidence,              0,   1,   0.7),
         estimatedQuantityGrams:  clampNum(item.estimatedQuantityGrams,  1, 9999, 100),
+        // Structured quantity fields
+        quantity:           item.quantity != null ? clampNum(item.quantity, 0, 9999, undefined) : undefined,
+        unit:               sanitizedStr(item.unit),
+        count:              item.count != null ? clampNum(item.count, 0, 9999, undefined) : undefined,
+        sizeDescription:    sanitizedStr(item.sizeDescription),
+        servingDescription: sanitizedStr(item.servingDescription),
       };
     })
     .filter(Boolean);
@@ -491,7 +498,7 @@ Return ONLY valid JSON in this exact format:
 {
   "detectedItems": [
     {
-      "name": "food name",
+      "name": "food name only, no portion info",
       "estimatedQuantity": "150g",
       "estimatedQuantityGrams": 150,
       "calories": 300,
@@ -499,11 +506,26 @@ Return ONLY valid JSON in this exact format:
       "carbs": 20,
       "fat": 8,
       "portionMultiplier": 1.5,
-      "confidence": 0.85
+      "confidence": 0.85,
+      "quantity": 1.5,
+      "unit": "cups",
+      "count": null,
+      "sizeDescription": "medium",
+      "servingDescription": "about 1.5 cups cooked rice"
     }
   ],
   "mode": "generic"
 }
+
+Rules for quantity fields:
+- "name" should be the food name only, without portion info (e.g. "banana", not "2 medium bananas")
+- "unit" must be one of: count, grams, oz, cups, tbsp, tsp, slices, pieces
+- For countable foods (eggs, bananas, slices of bread): set unit="count", set count=<number>, set quantity=<same number>
+  Example: 2 large eggs → count:2, unit:"count", quantity:2, sizeDescription:"large", servingDescription:"2 large eggs"
+- For measurable foods (rice, chicken, milk): set unit to the best match, quantity to the numeric amount
+  Example: 1.5 cups cooked rice → quantity:1.5, unit:"cups", servingDescription:"about 1.5 cups cooked rice"
+- "servingDescription" is a human-readable summary like "3 medium bananas" or "about 180g grilled chicken"
+- "sizeDescription" is optional: "small", "medium", "large", "extra large" when relevant
 
 If you cannot identify any food items, return:
 {"detectedItems": [], "mode": "generic", "reason": "no_food"}
@@ -617,7 +639,7 @@ Return ONLY valid JSON in this exact format:
 {
   "detectedItems": [
     {
-      "name": "food name",
+      "name": "food name only",
       "estimatedQuantity": "150g",
       "estimatedQuantityGrams": 150,
       "calories": 300,
@@ -625,11 +647,17 @@ Return ONLY valid JSON in this exact format:
       "carbs": 20,
       "fat": 8,
       "portionMultiplier": 1.5,
-      "confidence": 0.85
+      "confidence": 0.85,
+      "quantity": 1.5,
+      "unit": "cups",
+      "count": null,
+      "sizeDescription": "medium",
+      "servingDescription": "about 1.5 cups cooked rice"
     }
   ],
   "mode": "generic"
 }
+For countable foods (eggs, bananas, slices): set unit="count", count=<number>. For measurable: set unit to best match.
 Return ONLY the JSON object with no markdown formatting, no code fences, and no additional text before or after.`;
   }
 
@@ -685,6 +713,26 @@ app.post('/lookup-nutrition', smallJsonBody, lookupLimiter, async (req, res) => 
   }
 });
 
+// ─── Common food database ─────────────────────────────────────────────────────
+// Quick local fallback for well-known foods that external DBs may not carry.
+
+const COMMON_FOODS = [
+  {
+    name: 'Dubble Bubble Chewing Gum',
+    aliases: ['dubble bubble', 'double bubble', 'bubble gum dubble', 'dubble bubble gum'],
+    serving_size: '1 piece (5g)',
+    calories: 25, protein: 0, carbs: 6, fat: 0,
+  },
+];
+
+function lookupCommonFood(query) {
+  const lower = query.toLowerCase().trim();
+  return COMMON_FOODS.find(food =>
+    food.name.toLowerCase().includes(lower) ||
+    food.aliases.some(a => lower.includes(a) || a.includes(lower))
+  ) ?? null;
+}
+
 // ─── /lookup ─────────────────────────────────────────────────────────────────
 // "Add item manually" on EstimateScreen — tries OFF, falls back to Claude
 
@@ -693,6 +741,13 @@ app.post('/lookup', smallJsonBody, aiLimiter, async (req, res) => {
   const body = validate(lookupSchema, req.body, res);
   if (!body) return;
   const { query } = body;
+
+  // Check local common foods first
+  const common = lookupCommonFood(query);
+  if (common) {
+    console.log('[/lookup] common food hit:', common.name);
+    return res.json({ name: common.name, calories: common.calories, protein: common.protein, carbs: common.carbs, fat: common.fat });
+  }
 
   // Try Open Food Facts first (good for branded/packaged products)
   try {

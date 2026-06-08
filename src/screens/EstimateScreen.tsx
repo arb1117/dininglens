@@ -61,6 +61,9 @@ function round1(n: number) { return Math.round(n * 10) / 10; }
 
 type ItemSource = 'ai' | 'menu' | 'barcode' | 'manual';
 
+const QUANTITY_UNITS = ['count', 'grams', 'oz', 'cups', 'tbsp', 'tsp', 'slices', 'pieces'] as const;
+type QuantityUnit = typeof QUANTITY_UNITS[number];
+
 type NormalizedItem = {
   id: string;
   name: string;
@@ -71,6 +74,12 @@ type NormalizedItem = {
   confidence?: number;
   manuallyAdded?: boolean;
   source?: ItemSource;
+  // Structured quantity fields from AI
+  quantity?: number;
+  unit?: QuantityUnit | string;
+  count?: number;
+  sizeDescription?: string;
+  servingDescription?: string;
 };
 
 const SOURCE_BADGE: Record<ItemSource, string> = {
@@ -143,6 +152,11 @@ function buildInitialItems(
     fat: item.fat ?? 0,
     confidence: item.confidence,
     source: src,
+    quantity: item.quantity,
+    unit: item.unit as QuantityUnit | undefined,
+    count: item.count,
+    sizeDescription: item.sizeDescription,
+    servingDescription: item.servingDescription,
   }));
 }
 
@@ -181,6 +195,16 @@ export default function EstimateScreen({ navigation, route }: Props) {
   );
 
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
+
+  // Per-item quantity multipliers for structured quantity editing.
+  // A value of 2.0 means "twice the base serving"; undefined → fall back to visual portion.
+  const [quantityMultipliers, setQuantityMultipliers] = useState<Record<string, number>>({});
+  // Editable count strings for countable items
+  const [countEdits, setCountEdits] = useState<Record<string, string>>({});
+  // Editable amount strings for measurable items
+  const [amountEdits, setAmountEdits] = useState<Record<string, string>>({});
+  // Unit selector for measurable items
+  const [unitSelections, setUnitSelections] = useState<Record<string, string>>({});
 
   const [pickedPeriod, setPickedPeriod] = useState<MealPeriod>(autoDetectPeriod());
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -252,8 +276,14 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
   function getPortionFor(id: string): VisualPortion { return portions[id] ?? 'medium'; }
 
+  function getEffectiveMultiplier(item: NormalizedItem): number {
+    const qm = quantityMultipliers[item.id];
+    if (qm !== undefined) return qm;
+    return VISUAL_MULTIPLIERS[getPortionFor(item.id)];
+  }
+
   function getScaled(item: NormalizedItem, portion: VisualPortion) {
-    const m = VISUAL_MULTIPLIERS[portion];
+    const m = getEffectiveMultiplier(item);
     return {
       cal:     Math.round(item.cal     * m),
       protein: round1(item.protein * m),
@@ -262,10 +292,30 @@ export default function EstimateScreen({ navigation, route }: Props) {
     };
   }
 
+  function updateCountEdit(item: NormalizedItem, rawStr: string) {
+    setCountEdits(prev => ({ ...prev, [item.id]: rawStr }));
+    const newCount = parseInt(rawStr);
+    if (!isNaN(newCount) && newCount > 0 && item.count && item.count > 0) {
+      setQuantityMultipliers(prev => ({ ...prev, [item.id]: newCount / item.count! }));
+    }
+  }
+
+  function updateAmountEdit(item: NormalizedItem, rawStr: string) {
+    setAmountEdits(prev => ({ ...prev, [item.id]: rawStr }));
+    const newAmt = parseFloat(rawStr);
+    if (!isNaN(newAmt) && newAmt > 0 && item.quantity && item.quantity > 0) {
+      setQuantityMultipliers(prev => ({ ...prev, [item.id]: newAmt / item.quantity! }));
+    }
+  }
+
   function removeItem(id: string) {
     swipeableRefs.current[id]?.close();
     setItems(prev => prev.filter(i => i.id !== id));
     setPortions(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setQuantityMultipliers(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setCountEdits(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setAmountEdits(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setUnitSelections(prev => { const next = { ...prev }; delete next[id]; return next; });
   }
 
   async function handleLookup() {
@@ -383,7 +433,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
       { cal: 0, protein: 0, carbs: 0, fat: 0 }
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, portions]
+    [items, portions, quantityMultipliers]
   );
 
   const [zerocalWarning, setZerocalWarning] = useState(false);
@@ -398,7 +448,20 @@ export default function EstimateScreen({ navigation, route }: Props) {
     const mealItems: MacroItem[] = items.map(item => {
       const portion = getPortionFor(item.id);
       const scaled = getScaled(item, portion);
-      return { name: item.name, portion: VISUAL_LABELS[portion].label, ...scaled };
+      const hasQuantityEdit = quantityMultipliers[item.id] !== undefined;
+      const portionLabel = hasQuantityEdit
+        ? (item.servingDescription ?? item.name)
+        : VISUAL_LABELS[portion].label;
+      return {
+        name: item.name,
+        portion: portionLabel,
+        ...scaled,
+        quantity: item.quantity,
+        unit: item.unit,
+        count: item.count ? Math.round(item.count * (quantityMultipliers[item.id] ?? 1)) : undefined,
+        sizeDescription: item.sizeDescription,
+        servingDescription: item.servingDescription,
+      };
     });
     addMeal({ id: String(Date.now()), timestamp: new Date().toISOString(), period: pickedPeriod, items: mealItems, totals });
     navigation.navigate('MainTabs', { screen: 'Dashboard' });
@@ -548,31 +611,100 @@ export default function EstimateScreen({ navigation, route }: Props) {
                     )}
                   </View>
 
-                  {/* Visual portion picker */}
-                  <View style={styles.visualPortionRow}>
-                    {VISUAL_PORTIONS.map(vp => (
+                  {/* Serving description from AI */}
+                  {item.servingDescription ? (
+                    <Text style={styles.servingDescLabel}>{item.servingDescription}</Text>
+                  ) : null}
+
+                  {/* Structured quantity editor: stepper for countable items */}
+                  {item.count !== undefined && item.count > 0 ? (
+                    <View style={styles.quantityEditorRow}>
                       <TouchableOpacity
-                        key={vp}
-                        style={[styles.vpBtn, portion === vp && styles.vpBtnActive]}
-                        onPress={() => setPortions(prev => ({ ...prev, [item.id]: vp }))}
+                        style={styles.stepperBtn}
+                        onPress={() => {
+                          const cur = parseInt(countEdits[item.id] ?? String(item.count)) || 1;
+                          const next = Math.max(1, cur - 1);
+                          updateCountEdit(item, String(next));
+                        }}
                       >
-                        <Text style={styles.vpEmoji}>{VISUAL_LABELS[vp].emoji}</Text>
-                        <Text style={[styles.vpLabel, portion === vp && styles.vpLabelActive]}>
-                          {VISUAL_LABELS[vp].label}
-                        </Text>
+                        <Text style={styles.stepperBtnText}>−</Text>
                       </TouchableOpacity>
-                    ))}
-                  </View>
+                      <TextInput
+                        style={styles.stepperInput}
+                        value={countEdits[item.id] ?? String(item.count)}
+                        onChangeText={v => updateCountEdit(item, v.replace(/[^0-9]/g, ''))}
+                        keyboardType="number-pad"
+                        selectTextOnFocus
+                        maxLength={3}
+                      />
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => {
+                          const cur = parseInt(countEdits[item.id] ?? String(item.count)) || 1;
+                          updateCountEdit(item, String(cur + 1));
+                        }}
+                      >
+                        <Text style={styles.stepperBtnText}>+</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.quantityUnitLabel}>{item.sizeDescription ?? 'piece(s)'}</Text>
+                    </View>
+                  ) : item.quantity !== undefined && item.unit && item.unit !== 'count' && item.unit !== 'pieces' ? (
+                    /* Measurable item: numeric input + unit selector */
+                    <View style={styles.quantityEditorRow}>
+                      <TextInput
+                        style={styles.measureInput}
+                        value={amountEdits[item.id] ?? String(item.quantity)}
+                        onChangeText={v => updateAmountEdit(item, v.replace(/[^0-9.]/g, ''))}
+                        keyboardType="decimal-pad"
+                        selectTextOnFocus
+                        maxLength={6}
+                      />
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.unitScroller}>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {QUANTITY_UNITS.filter(u => u !== 'count').map(u => {
+                            const active = (unitSelections[item.id] ?? item.unit) === u;
+                            return (
+                              <TouchableOpacity
+                                key={u}
+                                style={[styles.unitChip, active && styles.unitChipActive]}
+                                onPress={() => setUnitSelections(prev => ({ ...prev, [item.id]: u }))}
+                              >
+                                <Text style={[styles.unitChipText, active && styles.unitChipTextActive]}>{u}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  ) : (
+                    /* Default: visual portion picker */
+                    <View style={styles.visualPortionRow}>
+                      {VISUAL_PORTIONS.map(vp => (
+                        <TouchableOpacity
+                          key={vp}
+                          style={[styles.vpBtn, portion === vp && styles.vpBtnActive]}
+                          onPress={() => setPortions(prev => ({ ...prev, [item.id]: vp }))}
+                        >
+                          <Text style={styles.vpEmoji}>{VISUAL_LABELS[vp].emoji}</Text>
+                          <Text style={[styles.vpLabel, portion === vp && styles.vpLabelActive]}>
+                            {VISUAL_LABELS[vp].label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
 
                   {/* Calories — prominent */}
                   <Text style={styles.itemCalories}>{scaled.cal} cal</Text>
 
-                  {/* Serving summary */}
-                  <Text style={styles.servingSummary}>
-                    {portion === 'medium'
-                      ? 'Typical portion (×1.0)'
-                      : `${VISUAL_LABELS[portion].label} portion (×${VISUAL_MULTIPLIERS[portion]})`}
-                  </Text>
+                  {/* Serving summary — only for visual portion mode */}
+                  {item.count === undefined && !(item.quantity !== undefined && item.unit && item.unit !== 'count') && (
+                    <Text style={styles.servingSummary}>
+                      {portion === 'medium'
+                        ? 'Typical portion (×1.0)'
+                        : `${VISUAL_LABELS[portion].label} portion (×${VISUAL_MULTIPLIERS[portion]})`}
+                    </Text>
+                  )}
 
                   {/* Macros — secondary */}
                   <Text style={styles.itemMacros}>
@@ -891,6 +1023,41 @@ const styles = StyleSheet.create({
   itemCalories: { fontSize: 28, fontWeight: '800', color: '#FFFFFF', marginBottom: 2 },
   servingSummary: { fontSize: 11, color: '#555', marginBottom: 4, fontStyle: 'italic' },
   itemMacros: { fontSize: 13, color: '#8A8A8A' },
+
+  servingDescLabel: {
+    fontSize: 13, color: '#00E5A0', fontWeight: '600', marginBottom: 10, fontStyle: 'italic',
+  },
+
+  // Quantity editor — stepper
+  quantityEditorRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12,
+  },
+  stepperBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center',
+  },
+  stepperBtnText: { fontSize: 22, color: '#00E5A0', lineHeight: 26, fontWeight: '300' },
+  stepperInput: {
+    width: 48, height: 36, borderRadius: 8, backgroundColor: '#2A2A2A',
+    textAlign: 'center', fontSize: 16, fontWeight: '700', color: '#FFFFFF',
+    borderWidth: 1, borderColor: '#3A3A3A',
+  },
+  quantityUnitLabel: { fontSize: 13, color: '#8A8A8A', fontWeight: '500' },
+
+  // Quantity editor — measurable
+  measureInput: {
+    width: 72, height: 36, borderRadius: 8, backgroundColor: '#2A2A2A',
+    paddingHorizontal: 8, fontSize: 16, fontWeight: '700', color: '#FFFFFF',
+    borderWidth: 1, borderColor: '#3A3A3A',
+  },
+  unitScroller: { flex: 1 },
+  unitChip: {
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
+    backgroundColor: '#2A2A2A',
+  },
+  unitChipActive: { backgroundColor: '#00E5A0' },
+  unitChipText: { fontSize: 12, fontWeight: '600', color: '#8A8A8A' },
+  unitChipTextActive: { color: '#0F0F0F' },
 
   // Confidence (kept for backward compat, unused)
   confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },

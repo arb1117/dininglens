@@ -429,31 +429,65 @@ export default function CameraScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        {/* Barcode mode overlay */}
+        {/* Barcode mode overlay — box-none so recovery buttons receive touches */}
         {scanMode === 'barcode' && (
-          <View style={styles.barcodeOverlay} pointerEvents="none">
-            <View style={styles.barcodeFrame} />
-            <Text style={styles.barcodeScanText}>
+          <View style={styles.barcodeOverlay} pointerEvents="box-none">
+            <View style={styles.barcodeFrame} pointerEvents="none" />
+            <Text style={styles.barcodeScanText} pointerEvents="none">
               {barcodeScanning ? 'Looking up product…' : 'Point camera at barcode'}
             </Text>
-            {barcodeError && (
-              <View style={styles.barcodeErrorWrap}>
-                <Text style={styles.barcodeErrorText}>{barcodeError}</Text>
-                {barcodeNotFoundCode && (
-                  <TouchableOpacity
-                    style={styles.barcodeSearchBtn}
-                    onPress={() => {
-                      setBarcodeNotFoundCode(null);
-                      setBarcodeError(null);
-                      navigation.navigate('Search', { query: barcodeNotFoundCode });
-                    }}
-                  >
-                    <Text style={styles.barcodeSearchBtnText}>Search</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
             {barcodeScanning && <ActivityIndicator color="#00E5A0" style={{ marginTop: 8 }} />}
+          </View>
+        )}
+
+        {/* Barcode not-found recovery card — rendered outside the pointer-blocking overlay */}
+        {scanMode === 'barcode' && barcodeError && (
+          <View style={styles.barcodeRecoveryWrap}>
+            <View style={styles.barcodeRecoveryCard}>
+              <Text style={styles.barcodeRecoveryTitle}>Product not found</Text>
+              <Text style={styles.barcodeRecoveryDesc}>
+                {barcodeNotFoundCode
+                  ? 'This barcode isn\'t in the database yet.'
+                  : 'Lookup failed — try again or use one of the options below.'}
+              </Text>
+
+              <TouchableOpacity
+                style={styles.barcodeRecoveryBtn}
+                onPress={() => {
+                  const code = barcodeNotFoundCode;
+                  setBarcodeNotFoundCode(null);
+                  setBarcodeError(null);
+                  navigation.navigate('Search', { query: code ?? '' });
+                }}
+              >
+                <Text style={styles.barcodeRecoveryBtnText}>🔍  Search by product name</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.barcodeRecoveryBtn}
+                onPress={() => {
+                  setBarcodeNotFoundCode(null);
+                  setBarcodeError(null);
+                  navigation.navigate('Estimate', {
+                    analysisResult: undefined,
+                    imageBase64: undefined,
+                  });
+                }}
+              >
+                <Text style={styles.barcodeRecoveryBtnText}>✏️  Enter nutrition manually</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.barcodeRecoveryBtn, styles.barcodeRecoveryBtnSecondary]}
+                onPress={() => {
+                  setBarcodeNotFoundCode(null);
+                  setBarcodeError(null);
+                  lastScanAt.current = 0;
+                }}
+              >
+                <Text style={styles.barcodeRecoveryBtnTextSecondary}>↩  Try scanning again</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -968,6 +1002,33 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   barcodeSearchBtnText: { color: '#0F0F0F', fontWeight: '700', fontSize: 14 },
+
+  // Barcode recovery card
+  barcodeRecoveryWrap: {
+    position: 'absolute', left: 0, right: 0, bottom: 140,
+    alignItems: 'center', paddingHorizontal: 24,
+  },
+  barcodeRecoveryCard: {
+    backgroundColor: 'rgba(15,15,15,0.96)',
+    borderRadius: 18, padding: 20, width: '100%',
+    borderWidth: 1, borderColor: '#3A3A3A',
+    gap: 10,
+  },
+  barcodeRecoveryTitle: {
+    fontSize: 16, fontWeight: '800', color: '#FFFFFF', marginBottom: 4,
+  },
+  barcodeRecoveryDesc: {
+    fontSize: 13, color: '#8A8A8A', lineHeight: 18, marginBottom: 4,
+  },
+  barcodeRecoveryBtn: {
+    backgroundColor: '#00E5A0', borderRadius: 12,
+    paddingVertical: 13, paddingHorizontal: 16, alignItems: 'center',
+  },
+  barcodeRecoveryBtnSecondary: {
+    backgroundColor: '#2A2A2A',
+  },
+  barcodeRecoveryBtnText: { color: '#0F0F0F', fontWeight: '700', fontSize: 14 },
+  barcodeRecoveryBtnTextSecondary: { color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
 
   // Permission screen
   permissionScreen: {

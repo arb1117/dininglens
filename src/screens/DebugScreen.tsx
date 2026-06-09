@@ -8,6 +8,8 @@ import { SafeAreaView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { API_BASE_URL } from '../config/api';
 import { useMealContext } from '../context/MealContext';
+import { useEntitlement } from '../hooks/useEntitlement';
+import { getInstallId } from '../services/identityService';
 
 // App version from package.json — expo-constants would be more accurate in a real build
 const APP_VERSION = '1.0.0-beta';
@@ -17,16 +19,21 @@ type HealthState = 'unknown' | 'checking' | 'ok' | 'error';
 export default function DebugScreen() {
   const navigation = useNavigation();
   const { mealLog, goals } = useMealContext();
+  const { loading: entLoading, entitlement } = useEntitlement();
 
   const [health, setHealth]           = useState<HealthState>('unknown');
   const [healthMs, setHealthMs]       = useState<number | null>(null);
   const [lastError, setLastError]     = useState<string>('None');
   const [clearing, setClearing]       = useState(false);
+  const [installIdPrefix, setInstallIdPrefix] = useState<string>('…');
 
   useEffect(() => {
     checkHealth();
     AsyncStorage.getItem('@dininglens_last_error')
       .then(v => { if (v) setLastError(v); })
+      .catch(() => {});
+    getInstallId()
+      .then(id => setInstallIdPrefix(id.slice(0, 8)))
       .catch(() => {});
   }, []);
 
@@ -71,11 +78,20 @@ export default function DebugScreen() {
     );
   }
 
+  function trialDaysLeft(): string {
+    if (!entitlement) return '—';
+    const ms = new Date(entitlement.trialEndsAt).getTime() - Date.now();
+    const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
+    return days > 0 ? `${days}d` : 'expired';
+  }
+
   function copyDebugInfo() {
     const info = [
       `DiningLens ${APP_VERSION}`,
+      `Install ID: ${installIdPrefix}…`,
       `Backend: ${API_BASE_URL}`,
       `Health: ${health}${healthMs != null ? ` (${healthMs}ms)` : ''}`,
+      `Entitlement: ${entitlement?.status ?? '?'} / coach ${entitlement?.coachMessagesRemaining ?? '?'} left`,
       `Meals logged: ${mealLog.length}`,
       `Goal: ${goals.calories}kcal / ${goals.protein}g P / ${goals.carbs}g C / ${goals.fat}g F`,
       `Last error: ${lastError}`,
@@ -95,8 +111,9 @@ export default function DebugScreen() {
         <Text style={s.subtitle}>For bug reports — no API keys shown</Text>
 
         <View style={s.card}>
-          <Row label="App version" value={APP_VERSION} />
-          <Row label="Backend URL" value={API_BASE_URL} mono />
+          <Row label="App version"  value={APP_VERSION} />
+          <Row label="Install ID"   value={`${installIdPrefix}…`} mono />
+          <Row label="Backend URL"  value={API_BASE_URL} mono />
         </View>
 
         <View style={s.card}>
@@ -111,6 +128,19 @@ export default function DebugScreen() {
               <Text style={s.checkBtnText}>Recheck</Text>
             </TouchableOpacity>
           </View>
+        </View>
+
+        <View style={s.card}>
+          <Text style={s.cardTitle}>Entitlement</Text>
+          {entLoading
+            ? <ActivityIndicator color="#00E5A0" size="small" style={{ alignSelf: 'flex-start' }} />
+            : <>
+                <Row label="Status"        value={entitlement?.status ?? '—'} />
+                <Row label="Trial ends"    value={trialDaysLeft()} />
+                <Row label="Coach left"    value={entitlement ? `${entitlement.coachMessagesRemaining} / ${entitlement.coachMessagesLimit}` : '—'} />
+                <Row label="Can use app"   value={entitlement ? (entitlement.canUseApp ? 'yes' : 'no') : '—'} />
+              </>
+          }
         </View>
 
         <View style={s.card}>

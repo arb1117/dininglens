@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
+import { useEntitlement } from '../hooks/useEntitlement';
 
 const APP_VERSION = '1.0.0-beta';
 
@@ -17,8 +18,20 @@ const PRESET_LABELS: Record<string, string> = {
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { goals, mealLog, deleteMeal, resetDayStats } = useMealContext();
+  const { entitlement } = useEntitlement();
   const debugTaps = useRef(0);
   const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function trialStatusText(): string | null {
+    if (!entitlement) return null;
+    if (entitlement.status === 'trialing') {
+      const ms   = new Date(entitlement.trialEndsAt).getTime() - Date.now();
+      const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
+      return days > 0 ? `Free trial — ${days} day${days === 1 ? '' : 's'} remaining` : 'Trial expired';
+    }
+    if (entitlement.canUseApp) return 'Subscription active';
+    return 'Trial expired';
+  }
 
   function handleVersionTap() {
     debugTaps.current += 1;
@@ -91,6 +104,9 @@ export default function ProfileScreen() {
         <TouchableOpacity style={s.editBtn} onPress={() => navigation.navigate('Goals')}>
           <Text style={s.editBtnText}>Edit Goal</Text>
         </TouchableOpacity>
+        {trialStatusText() !== null && (
+          <Text style={s.trialStatus}>{trialStatusText()}</Text>
+        )}
       </View>
 
       {/* Streak card */}
@@ -173,6 +189,8 @@ const s = StyleSheet.create({
     paddingVertical: 10, alignItems: 'center',
   },
   editBtnText: { color: '#00E5A0', fontWeight: '700', fontSize: 14 },
+
+  trialStatus: { fontSize: 11, color: '#8A8A8A', marginTop: 10, textAlign: 'center' },
 
   streakNum: { fontSize: 40, fontWeight: '900', color: '#FFFFFF', marginBottom: 6 },
   streakSub: { fontSize: 13, color: '#8A8A8A' },

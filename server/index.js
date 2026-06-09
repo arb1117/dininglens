@@ -6,7 +6,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const dns = require('dns').promises;
 const net = require('net');
-const identityMiddleware = require('./middleware/identity');
+const identityMiddleware   = require('./middleware/identity');
+const entitlementService   = require('./services/entitlementService');
 
 const AnthropicModule = require('@anthropic-ai/sdk');
 const Anthropic = AnthropicModule.Anthropic ?? AnthropicModule.default ?? AnthropicModule;
@@ -1197,6 +1198,31 @@ Estimate the quantity as servings AND grams. Return ONLY JSON:
   } catch (err) {
     console.error('[/interpret-quantity] Error:', err.message ?? err, 'requestId=', req.requestId);
     sendServerError(res, 'Quantity interpretation failed');
+  }
+});
+
+// ─── /entitlements/me ────────────────────────────────────────────────────────
+
+app.get('/entitlements/me', smallJsonBody, async (req, res) => {
+  try {
+    const rec  = entitlementService.getOrCreateEntitlement(req.actor.id);
+    const snap = entitlementService.getUsageSnapshot(req.actor.id);
+    const appOk   = entitlementService.canUseApp(req.actor.id);
+    const coachOk = entitlementService.canUseCoach(req.actor.id);
+    return res.json({
+      status:                  rec.status,
+      trialStartedAt:          rec.trialStartedAt,
+      trialEndsAt:             rec.trialEndsAt,
+      canUseApp:               appOk,
+      canUseCoach:             coachOk,
+      coachMessagesRemaining:  snap.coachMessagesRemaining,
+      coachMessagesLimit:      snap.coachMessagesLimit,
+      coachMessagesResetAt:    snap.coachMessagesResetAt,
+      canUseScrape:            appOk,
+    });
+  } catch (err) {
+    console.error('[/entitlements/me] Error:', err.message, 'requestId=', req.requestId);
+    sendServerError(res, 'Could not load entitlement');
   }
 });
 

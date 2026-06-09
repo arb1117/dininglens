@@ -50,10 +50,16 @@ function getEntitlement(actorId) {
   return store.get(actorId) ?? null;
 }
 
+function getComputedStatus(rec) {
+  if (rec.paid) return 'active';
+  if (new Date(rec.trialEndsAt) > new Date()) return 'trialing';
+  return 'expired';
+}
+
 function canUseApp(actorId) {
   const rec = getOrCreateEntitlement(actorId);
-  if (rec.paid) return true;
-  return rec.status === 'trialing' && new Date(rec.trialEndsAt) > new Date();
+  const status = getComputedStatus(rec);
+  return status === 'active' || status === 'trialing';
 }
 
 function canUseCoach(actorId) {
@@ -109,6 +115,7 @@ function getScrapeSnapshot(actorId) {
 module.exports = {
   getOrCreateEntitlement,
   getEntitlement,
+  getComputedStatus,
   canUseApp,
   canUseCoach,
   incrementCoachUsage,

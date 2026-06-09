@@ -777,7 +777,7 @@ app.get('/entitlements/me', smallJsonBody, async (req, res) => {
     const coachOk    = entitlementService.canUseCoach(req.actor.id);
     const scrapeOk   = entitlementService.canUseScrape(req.actor.id);
     return res.json({
-      status:                  rec.status,
+      status:                  entitlementService.getComputedStatus(rec),
       trialStartedAt:          rec.trialStartedAt,
       trialEndsAt:             rec.trialEndsAt,
       canUseApp:               appOk,

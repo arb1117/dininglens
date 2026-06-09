@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, FlatList, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMealContext, LoggedMeal, MacroItem, autoDetectPeriod } from '../context/MealContext';
 import { RootStackParamList } from '../../App';
@@ -135,25 +135,65 @@ function MealCard({ meal, onEditItem, onDelete, onLogAgain, onRemoveItem, onSave
 export default function HistoryScreen({ navigation }: Props) {
   const { mealLog, addMeal, deleteMeal, deleteMealItem } = useMealContext();
   const [toast, setToast] = useState<string | null>(null);
+  const today = new Date().toDateString();
+
+  const groupedDays = useMemo(() => {
+    const groups: Record<string, LoggedMeal[]> = {};
+    mealLog.forEach(meal => {
+      const key = new Date(meal.timestamp).toDateString();
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(meal);
+    });
+    return Object.entries(groups)
+      .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
+      .map(([dateStr, meals]) => {
+        const totals = meals.reduce(
+          (acc, m) => ({
+            cal: Math.round(acc.cal + m.totals.cal),
+            protein: Math.round((acc.protein + m.totals.protein) * 10) / 10,
+            carbs: Math.round((acc.carbs + m.totals.carbs) * 10) / 10,
+            fat: Math.round((acc.fat + m.totals.fat) * 10) / 10,
+          }),
+          { cal: 0, protein: 0, carbs: 0, fat: 0 }
+        );
+        const d = new Date(dateStr);
+        const isToday = dateStr === today;
+        const isYesterday = dateStr === new Date(Date.now() - 86400000).toDateString();
+        const label = isToday ? 'Today'
+          : isYesterday ? 'Yesterday'
+          : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        return { dateStr, label, meals, totals, isToday };
+      });
+  }, [mealLog, today]);
 
   function handleEditItem(mealId: string, itemIndex: number, item: MacroItem) {
-    navigation.navigate('Search', {
-      editMode: true,
-      mealId,
-      itemIndex,
-      existingItem: item,
-    });
+    navigation.navigate('Search', { editMode: true, mealId, itemIndex, existingItem: item });
   }
 
   function handleLogAgain(meal: LoggedMeal) {
     addMeal({
-      id: String(Date.now()),
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
       timestamp: new Date().toISOString(),
-      period: autoDetectPeriod(),
+      period: meal.period ?? autoDetectPeriod(),
       items: meal.items,
       totals: meal.totals,
     });
     setToast('✓ Logged again');
+    setTimeout(() => setToast(null), 1800);
+  }
+
+  function handleCopyDay(meals: LoggedMeal[]) {
+    const now = Date.now();
+    meals.forEach((meal, i) => {
+      addMeal({
+        id: `${now + i}_${Math.random().toString(36).slice(2, 5)}`,
+        timestamp: new Date().toISOString(),
+        period: meal.period ?? autoDetectPeriod(),
+        items: meal.items,
+        totals: meal.totals,
+      });
+    });
+    setToast(`✓ ${meals.length} meal${meals.length !== 1 ? 's' : ''} copied to today`);
     setTimeout(() => setToast(null), 1800);
   }
 
@@ -186,21 +226,36 @@ export default function HistoryScreen({ navigation }: Props) {
           <Text style={styles.emptySubText}>Log your first meal from the Dashboard or Camera tab.</Text>
         </View>
       ) : (
-        <FlatList
-          data={mealLog}
-          keyExtractor={m => m.id}
-          renderItem={({ item }) => (
-            <MealCard
-              meal={item}
-              onEditItem={handleEditItem}
-              onDelete={deleteMeal}
-              onLogAgain={handleLogAgain}
-              onRemoveItem={handleRemoveItem}
-              onSave={handleSave}
-            />
-          )}
-          contentContainerStyle={styles.list}
-        />
+        <ScrollView contentContainerStyle={styles.list}>
+          {groupedDays.map(({ dateStr, label, meals, totals, isToday }) => (
+            <View key={dateStr}>
+              <View style={styles.dayHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.dayLabel}>{label}</Text>
+                  <Text style={styles.dayTotals}>
+                    {totals.cal} cal · {totals.protein}g P · {totals.carbs}g C · {totals.fat}g F
+                  </Text>
+                </View>
+                {!isToday && (
+                  <TouchableOpacity style={styles.copyDayBtn} onPress={() => handleCopyDay(meals)}>
+                    <Text style={styles.copyDayBtnText}>Copy day</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {meals.map(meal => (
+                <MealCard
+                  key={meal.id}
+                  meal={meal}
+                  onEditItem={handleEditItem}
+                  onDelete={deleteMeal}
+                  onLogAgain={handleLogAgain}
+                  onRemoveItem={handleRemoveItem}
+                  onSave={handleSave}
+                />
+              ))}
+            </View>
+          ))}
+        </ScrollView>
       )}
     </View>
   );
@@ -276,4 +331,19 @@ const styles = StyleSheet.create({
   macroChipLabel: { fontSize: 10, color: '#8A8A8A', marginTop: 2, fontWeight: '500' },
 
   expandHint: { fontSize: 11, color: '#8A8A8A', textAlign: 'center', marginTop: 10 },
+
+  dayHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 10, paddingHorizontal: 4,
+    marginTop: 8, marginBottom: 4,
+    borderBottomWidth: 1, borderBottomColor: '#2A2A2A',
+  },
+  dayLabel: { fontSize: 14, fontWeight: '800', color: '#FFFFFF' },
+  dayTotals: { fontSize: 11, color: '#8A8A8A', marginTop: 2 },
+  copyDayBtn: {
+    backgroundColor: '#0A2A1A', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderWidth: 1, borderColor: '#1A4A2A',
+  },
+  copyDayBtnText: { fontSize: 12, fontWeight: '700', color: '#00E5A0' },
 });

@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Modal,
+  Alert,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -21,6 +22,7 @@ import { CHAIN_MENUS, getChainMenuItems } from '../data/chainMenus';
 import { analyzeImage } from '../services/visionService';
 import { useMealContext } from '../context/MealContext';
 import { API_BASE_URL } from '../config/api';
+import { useEntitlement } from '../hooks/useEntitlement';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Camera'>;
 
@@ -40,6 +42,7 @@ type VenueSearchResult = {
 export default function CameraScreen({ navigation, route }: Props) {
   const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems, mealLog, goals } =
     useMealContext();
+  const { entitlement } = useEntitlement();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [diningHallStatus, setDiningHallStatus] = useState<DiningHallStatus>('inactive');
@@ -178,8 +181,17 @@ export default function CameraScreen({ navigation, route }: Props) {
     setVenue(null);
   }
 
+  function showTrialExpiredAlert() {
+    Alert.alert(
+      'Free trial ended',
+      'Your free trial has ended. Upgrade to keep tracking your nutrition.',
+      [{ text: 'OK' }]
+    );
+  }
+
   async function handleShutter() {
     if (!cameraRef.current || analyzing) return;
+    if (entitlement && !entitlement.canUseApp) { showTrialExpiredAlert(); return; }
     setAnalyzing(true);
     setAnalyzingLabel('Analyzing meal...');
     const wakingTimer = setTimeout(
@@ -217,6 +229,7 @@ export default function CameraScreen({ navigation, route }: Props) {
   async function handleBarcodeScan({ data }: { data: string }) {
     const now = Date.now();
     if (now - lastScanAt.current < 3000 || barcodeScanning) return;
+    if (entitlement && !entitlement.canUseApp) { showTrialExpiredAlert(); return; }
     lastScanAt.current = now;
     setBarcodeScanning(true);
     setBarcodeError(null);

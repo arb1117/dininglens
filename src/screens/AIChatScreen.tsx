@@ -9,6 +9,8 @@ import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
 import { API_BASE_URL } from '../config/api';
+import { useEntitlement } from '../hooks/useEntitlement';
+import PaywallPlaceholder from '../components/PaywallPlaceholder';
 
 const MAX_HISTORY = 10;
 
@@ -144,6 +146,7 @@ function buildGreeting(
 export default function AIChatScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { mealLog, goals, waterCups, exerciseLog, totalBurned } = useMealContext();
+  const { entitlement, loading: entLoading } = useEntitlement();
 
   const today = new Date().toDateString();
 
@@ -237,6 +240,10 @@ export default function AIChatScreen() {
         )}
       </View>
     );
+  }
+
+  if (!entLoading && entitlement && !entitlement.canUseApp) {
+    return <PaywallPlaceholder reason="trial_expired" />;
   }
 
   return (

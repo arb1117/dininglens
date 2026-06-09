@@ -10,6 +10,8 @@ import { useMealContext, MacroItem, MealPeriod, autoDetectPeriod } from '../cont
 import { detectVenue, Venue } from '../services/venueService';
 import { fetchVenueMenu, MenuItem } from '../services/menuService';
 import { API_BASE_URL } from '../config/api';
+import { useEntitlement } from '../hooks/useEntitlement';
+import PaywallPlaceholder from '../components/PaywallPlaceholder';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Search'>;
 
@@ -65,6 +67,7 @@ export default function SearchScreen({ navigation, route }: Props) {
     addMeal, mealLog, updateMealItem,
     venue: ctxVenue, menuItems: ctxMenuItems, periodLabel: ctxPeriodLabel,
   } = useMealContext();
+  const { entitlement, loading: entLoading } = useEntitlement();
   const params = route?.params;
 
   const [nearbyVenue, setNearbyVenue] = useState<Venue | null>(ctxVenue);
@@ -421,6 +424,10 @@ export default function SearchScreen({ navigation, route }: Props) {
   }
 
   const isEstimate = params?.context === 'estimate';
+
+  if (!entLoading && entitlement && !entitlement.canUseApp) {
+    return <PaywallPlaceholder reason="trial_expired" />;
+  }
 
   return (
     <View style={s.container}>

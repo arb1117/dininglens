@@ -3,6 +3,7 @@ import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert } from 'react
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMealContext, LoggedMeal, MacroItem, autoDetectPeriod } from '../context/MealContext';
 import { RootStackParamList } from '../../App';
+import { saveMealFromLoggedMeal } from '../services/savedMealService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
 
@@ -12,9 +13,10 @@ type MealCardProps = {
   onDelete: (mealId: string) => void;
   onLogAgain: (meal: LoggedMeal) => void;
   onRemoveItem: (mealId: string, itemIndex: number) => void;
+  onSave: (meal: LoggedMeal) => void;
 };
 
-function MealCard({ meal, onEditItem, onDelete, onLogAgain, onRemoveItem }: MealCardProps) {
+function MealCard({ meal, onEditItem, onDelete, onLogAgain, onRemoveItem, onSave }: MealCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   function confirmDelete() {
@@ -46,6 +48,13 @@ function MealCard({ meal, onEditItem, onDelete, onLogAgain, onRemoveItem }: Meal
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={styles.actionBtnText}>↺</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.saveActionBtn]}
+            onPress={() => onSave(meal)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.actionBtnText}>💾</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, styles.deleteActionBtn]}
@@ -152,6 +161,15 @@ export default function HistoryScreen({ navigation }: Props) {
     deleteMealItem(mealId, itemIndex);
   }
 
+  function handleSave(meal: LoggedMeal) {
+    saveMealFromLoggedMeal(meal)
+      .then(() => {
+        setToast('✓ Saved to Saved Meals');
+        setTimeout(() => setToast(null), 1800);
+      })
+      .catch(() => {});
+  }
+
   return (
     <View style={styles.container}>
       {toast !== null && (
@@ -178,6 +196,7 @@ export default function HistoryScreen({ navigation }: Props) {
               onDelete={deleteMeal}
               onLogAgain={handleLogAgain}
               onRemoveItem={handleRemoveItem}
+              onSave={handleSave}
             />
           )}
           contentContainerStyle={styles.list}
@@ -218,6 +237,7 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 8,
     backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center',
   },
+  saveActionBtn: { backgroundColor: '#0A2A1A' },
   deleteActionBtn: { backgroundColor: '#2A1010' },
   actionBtnText: { fontSize: 15 },
 

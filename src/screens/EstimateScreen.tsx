@@ -11,6 +11,8 @@ import { useMealContext, MacroItem, LoggedMeal, MealPeriod, autoDetectPeriod } f
 import { MenuItem } from '../services/menuService';
 import { AnalysisResult } from '../services/visionService';
 import { apiFetch } from '../services/apiClient';
+import { saveMealFromItems } from '../services/savedMealService';
+import type { StoredMealItem } from '../storage/schema';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estimate'>;
 
@@ -435,6 +437,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
   );
 
   const [zerocalWarning, setZerocalWarning] = useState(false);
+  const [saveOfferItems, setSaveOfferItems] = useState<StoredMealItem[] | null>(null);
 
   function handleLogMeal() {
     if (items.length === 0) return;
@@ -498,7 +501,19 @@ export default function EstimateScreen({ navigation, route }: Props) {
       };
     });
     addMeal({ id: String(Date.now()), timestamp: new Date().toISOString(), period: pickedPeriod, items: mealItems, totals });
-    navigation.navigate('MainTabs', { screen: 'Dashboard' });
+    setSaveOfferItems(mealItems.map(item => ({
+      name: item.name,
+      portion: item.portion,
+      cal: item.cal,
+      protein: item.protein,
+      carbs: item.carbs,
+      fat: item.fat,
+      quantity: item.quantity,
+      unit: item.unit,
+      count: item.count,
+      sizeDescription: item.sizeDescription,
+      servingDescription: item.servingDescription,
+    })));
   }
 
   const imageQualityError = !hasReanalyzed && (
@@ -855,6 +870,42 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
       </ScrollView>
 
+      {/* Save offer — shown after logging */}
+      <Modal
+        visible={saveOfferItems !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setSaveOfferItems(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }}
+      >
+        <View style={styles.saveOfferBackdrop}>
+          <View style={styles.saveOfferSheet}>
+            <Text style={styles.saveOfferTitle}>Meal logged!</Text>
+            <Text style={styles.saveOfferSub}>Save this meal as a template for quick re-logging?</Text>
+            <TouchableOpacity
+              style={styles.saveOfferBtn}
+              onPress={() => {
+                const itemsToSave = saveOfferItems!;
+                setSaveOfferItems(null);
+                saveMealFromItems(
+                  itemsToSave,
+                  itemsToSave.slice(0, 3).map(i => i.name).join(', '),
+                  { defaultPeriod: pickedPeriod }
+                ).catch(() => {});
+                navigation.navigate('MainTabs', { screen: 'Dashboard' });
+              }}
+            >
+              <Text style={styles.saveOfferBtnText}>Save this meal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.saveOfferSkipBtn}
+              onPress={() => { setSaveOfferItems(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }}
+            >
+              <Text style={styles.saveOfferSkipText}>Skip</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={addModalVisible}
         animationType="slide"
@@ -1174,6 +1225,23 @@ const styles = StyleSheet.create({
   button: { backgroundColor: '#00E5A0', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   buttonDisabled: { opacity: 0.35 },
   buttonText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
+
+  saveOfferBackdrop: {
+    flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  saveOfferSheet: {
+    backgroundColor: '#1A1A1A', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 28, paddingBottom: Platform.OS === 'ios' ? 44 : 28,
+    borderTopWidth: 1, borderTopColor: '#2A2A2A',
+  },
+  saveOfferTitle: { fontSize: 20, fontWeight: '800', color: '#FFFFFF', marginBottom: 8 },
+  saveOfferSub: { fontSize: 14, color: '#8A8A8A', marginBottom: 24, lineHeight: 20 },
+  saveOfferBtn: {
+    backgroundColor: '#00E5A0', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginBottom: 10,
+  },
+  saveOfferBtnText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
+  saveOfferSkipBtn: { paddingVertical: 12, alignItems: 'center' },
+  saveOfferSkipText: { fontSize: 14, color: '#555' },
 
   // Modal
   modalContainer: { flex: 1, backgroundColor: '#0F0F0F' },

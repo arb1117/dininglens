@@ -12,6 +12,8 @@ import type { RootStackParamList } from '../../App';
 import { apiFetch } from '../services/apiClient';
 import { useBackendHealth } from '../hooks/useBackendHealth';
 import type { HealthStatus } from '../hooks/useBackendHealth';
+import { listSavedMeals, logSavedMeal, deleteSavedMeal } from '../services/savedMealService';
+import type { StoredSavedMeal } from '../storage/schema';
 
 const PERIOD_ORDER: MealPeriod[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
 const PERIOD_LABELS: Record<MealPeriod, string> = {
@@ -325,6 +327,7 @@ export default function DashboardScreen() {
     exerciseLog,
     addExercise,
     totalBurned,
+    addMeal,
   } = useMealContext();
 
   const { status: backendStatus, retry: retryBackend } = useBackendHealth();
@@ -379,11 +382,36 @@ export default function DashboardScreen() {
   // Micros expanded
   const [microsExpanded, setMicrosExpanded] = useState(false);
 
+  // Saved meals
+  const [savedMeals, setSavedMeals] = useState<StoredSavedMeal[]>([]);
+  const [savedMealsExpanded, setSavedMealsExpanded] = useState(false);
+  const [dashToast, setDashToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    listSavedMeals().then(meals => setSavedMeals(meals.slice(0, 8))).catch(() => {});
+  }, []);
+
+  function handleLogSavedMeal(id: string) {
+    logSavedMeal(id, addMeal)
+      .then(() => listSavedMeals().then(meals => setSavedMeals(meals.slice(0, 8))))
+      .then(() => { setDashToast('✓ Meal logged'); setTimeout(() => setDashToast(null), 1800); })
+      .catch(() => {});
+  }
+
+  function handleDeleteSavedMeal(id: string) {
+    deleteSavedMeal(id)
+      .then(() => listSavedMeals().then(meals => setSavedMeals(meals.slice(0, 8))))
+      .catch(() => {});
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={s.safeArea}>
       <BackendBanner status={backendStatus} onRetry={retryBackend} />
+      {dashToast !== null && (
+        <View style={s.dashToast}><Text style={s.dashToastText}>{dashToast}</Text></View>
+      )}
       <ScrollView style={s.scroll} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
 
         {/* Header */}
@@ -469,6 +497,30 @@ export default function DashboardScreen() {
             );
           })}
         </View>
+
+        {/* Saved meals */}
+        {savedMeals.length > 0 && (
+          <View style={s.card}>
+            <TouchableOpacity style={s.cardHeaderRow} onPress={() => setSavedMealsExpanded(v => !v)}>
+              <Text style={s.cardTitle}>⭐ Saved Meals</Text>
+              <Text style={s.chevron}>{savedMealsExpanded ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
+            {savedMealsExpanded && savedMeals.map(meal => (
+              <View key={meal.id} style={s.savedMealRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.savedMealName} numberOfLines={1}>{meal.name}</Text>
+                  <Text style={s.savedMealMeta}>{meal.totals.cal} cal · used {meal.useCount}×</Text>
+                </View>
+                <TouchableOpacity style={s.savedMealLogBtn} onPress={() => handleLogSavedMeal(meal.id)}>
+                  <Text style={s.savedMealLogBtnText}>Log</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleDeleteSavedMeal(meal.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={s.savedMealDeleteText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Water tracker */}
         <View style={s.card}>
@@ -622,4 +674,23 @@ const s = StyleSheet.create({
   exerciseDetail: { fontSize: 12, color: '#8A8A8A' },
 
   microsEmpty: { fontSize: 13, color: '#555', marginTop: 12, lineHeight: 18 },
+
+  dashToast: {
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
+    backgroundColor: '#00E5A0', paddingVertical: 14, alignItems: 'center',
+  },
+  dashToastText: { color: '#0F0F0F', fontWeight: '700', fontSize: 15 },
+
+  savedMealRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingTop: 12, borderTopWidth: 1, borderTopColor: '#2A2A2A', marginTop: 10,
+  },
+  savedMealName: { fontSize: 14, color: '#FFFFFF', fontWeight: '600' },
+  savedMealMeta: { fontSize: 11, color: '#8A8A8A', marginTop: 2 },
+  savedMealLogBtn: {
+    backgroundColor: '#00E5A0', borderRadius: 8,
+    paddingHorizontal: 14, paddingVertical: 7,
+  },
+  savedMealLogBtnText: { fontSize: 13, fontWeight: '700', color: '#0F0F0F' },
+  savedMealDeleteText: { fontSize: 14, color: '#555', paddingHorizontal: 4 },
 });

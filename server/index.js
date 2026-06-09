@@ -10,6 +10,7 @@ const identityMiddleware          = require('./middleware/identity');
 const entitlementService          = require('./services/entitlementService');
 const requireActiveEntitlement    = require('./middleware/requireActiveEntitlement');
 const requireCoachQuota           = require('./middleware/requireCoachQuota');
+const { canUseScrape, incrementScrapeUsage, getScrapeSnapshot } = entitlementService;
 
 const aiProvider = require('./services/aiProvider');
 
@@ -515,9 +516,18 @@ app.post('/detect-restaurant', smallJsonBody, detectRestaurantLimiter, requireAc
 // Fetches a restaurant website, extracts text, and uses Claude to parse the menu.
 // Results are cached in memory by placeId.
 
-const scrapeCache = new Map(); // placeId → { items, cachedAt }
+const scrapeCache = new Map(); // cacheKey → { items, cachedAt }
 const SCRAPE_CACHE_TTL_MS = Number(process.env.SCRAPE_CACHE_TTL_HOURS ?? 12) * 60 * 60 * 1000;
 const SCRAPE_MENU_ENABLED = (process.env.SCRAPE_MENU_ENABLED ?? 'true') === 'true';
+
+function normalizeScrapeKey(website) {
+  try {
+    const u = new URL(website);
+    return (u.hostname + u.pathname).toLowerCase().replace(/\/+$/, '');
+  } catch {
+    return website.toLowerCase();
+  }
+}
 
 app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement, async (req, res) => {
   if (!SCRAPE_MENU_ENABLED) {
@@ -531,14 +541,27 @@ app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement,
   if (!body) return;
   const { website, restaurantName, placeId } = body;
 
-  // Check cache
-  if (placeId) {
-    const cached = scrapeCache.get(placeId);
-    if (cached && Date.now() - cached.cachedAt < SCRAPE_CACHE_TTL_MS) {
-      console.log(`[/scrape-menu] cache hit for placeId=${placeId}`);
-      return res.json({ items: cached.items, source: 'cache' });
-    }
+  // Cache key: placeId takes priority; fall back to normalized URL
+  const cacheKey = placeId ?? normalizeScrapeKey(website);
+
+  // Check cache before counting quota
+  const cached = scrapeCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < SCRAPE_CACHE_TTL_MS) {
+    console.log(`[/scrape-menu] cache hit key=${cacheKey}`);
+    return res.json({ items: cached.items, source: 'cache' });
   }
+
+  // Enforce per-actor scrape quota before hitting the network
+  if (!canUseScrape(req.actor.id)) {
+    const snap = getScrapeSnapshot(req.actor.id);
+    return res.status(429).json({
+      error: 'scrape_limit_reached',
+      message: "You've reached today's menu scan limit.",
+      remaining: 0,
+      resetAt: snap.scrapeResetAt,
+    });
+  }
+  incrementScrapeUsage(req.actor.id);
 
   try {
     const safeWebsite = await assertPublicHttpsUrl(website);
@@ -578,8 +601,8 @@ app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement,
 
     console.log(`[/scrape-menu] extracted ${items.length} items`);
 
-    // Cache the result
-    if (placeId) scrapeCache.set(placeId, { items, cachedAt: Date.now() });
+    // Cache result (including empty) to prevent repeated scrapes of the same target
+    scrapeCache.set(cacheKey, { items, cachedAt: Date.now() });
 
     res.json({ items, source: 'scrape' });
   } catch (err) {
@@ -747,10 +770,12 @@ app.post('/interpret-quantity', smallJsonBody, aiLimiter, requireActiveEntitleme
 
 app.get('/entitlements/me', smallJsonBody, async (req, res) => {
   try {
-    const rec  = entitlementService.getOrCreateEntitlement(req.actor.id);
-    const snap = entitlementService.getUsageSnapshot(req.actor.id);
-    const appOk   = entitlementService.canUseApp(req.actor.id);
-    const coachOk = entitlementService.canUseCoach(req.actor.id);
+    const rec        = entitlementService.getOrCreateEntitlement(req.actor.id);
+    const snap       = entitlementService.getUsageSnapshot(req.actor.id);
+    const scrapeSnap = entitlementService.getScrapeSnapshot(req.actor.id);
+    const appOk      = entitlementService.canUseApp(req.actor.id);
+    const coachOk    = entitlementService.canUseCoach(req.actor.id);
+    const scrapeOk   = entitlementService.canUseScrape(req.actor.id);
     return res.json({
       status:                  rec.status,
       trialStartedAt:          rec.trialStartedAt,
@@ -760,7 +785,10 @@ app.get('/entitlements/me', smallJsonBody, async (req, res) => {
       coachMessagesRemaining:  snap.coachMessagesRemaining,
       coachMessagesLimit:      snap.coachMessagesLimit,
       coachMessagesResetAt:    snap.coachMessagesResetAt,
-      canUseScrape:            appOk,
+      canUseScrape:            scrapeOk,
+      scrapeRemaining:         scrapeSnap.scrapeRemaining,
+      scrapeLimit:             scrapeSnap.scrapeLimit,
+      scrapeResetAt:           scrapeSnap.scrapeResetAt,
     });
   } catch (err) {
     console.error('[/entitlements/me] Error:', err.message, 'requestId=', req.requestId);

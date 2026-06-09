@@ -1,9 +1,11 @@
 // PROTOTYPE: In-memory storage only. Production should use DB persistence (Supabase/Postgres).
 // Daily coach usage resets by calendar date (server local time).
 
-const TRIAL_DAYS              = Number(process.env.TRIAL_DAYS               ?? 14);
-const TRIAL_COACH_DAILY_LIMIT = Number(process.env.TRIAL_COACH_DAILY_LIMIT  ?? 3);
-const PAID_COACH_DAILY_LIMIT  = Number(process.env.PAID_COACH_DAILY_LIMIT   ?? 20);
+const TRIAL_DAYS               = Number(process.env.TRIAL_DAYS                ?? 14);
+const TRIAL_COACH_DAILY_LIMIT  = Number(process.env.TRIAL_COACH_DAILY_LIMIT   ?? 3);
+const PAID_COACH_DAILY_LIMIT   = Number(process.env.PAID_COACH_DAILY_LIMIT    ?? 20);
+const TRIAL_SCRAPE_DAILY_LIMIT = Number(process.env.TRIAL_SCRAPE_DAILY_LIMIT  ?? 5);
+const PAID_SCRAPE_DAILY_LIMIT  = Number(process.env.PAID_SCRAPE_DAILY_LIMIT   ?? 30);
 
 const store = new Map();
 
@@ -22,6 +24,8 @@ function freshRecord(actorId) {
     paid: false,
     coachUsageDate:  todayStr(),
     coachUsageCount: 0,
+    scrapeUsageDate:  todayStr(),
+    scrapeUsageCount: 0,
   };
 }
 
@@ -30,9 +34,14 @@ function getOrCreateEntitlement(actorId) {
     store.set(actorId, freshRecord(actorId));
   }
   const rec = store.get(actorId);
-  if (rec.coachUsageDate !== todayStr()) {
-    rec.coachUsageDate  = todayStr();
+  const today = todayStr();
+  if (rec.coachUsageDate !== today) {
+    rec.coachUsageDate  = today;
     rec.coachUsageCount = 0;
+  }
+  if (rec.scrapeUsageDate !== today) {
+    rec.scrapeUsageDate  = today;
+    rec.scrapeUsageCount = 0;
   }
   return rec;
 }
@@ -72,6 +81,31 @@ function getUsageSnapshot(actorId) {
   };
 }
 
+function canUseScrape(actorId) {
+  if (!canUseApp(actorId)) return false;
+  const rec   = getOrCreateEntitlement(actorId);
+  const limit = rec.paid ? PAID_SCRAPE_DAILY_LIMIT : TRIAL_SCRAPE_DAILY_LIMIT;
+  return rec.scrapeUsageCount < limit;
+}
+
+function incrementScrapeUsage(actorId) {
+  getOrCreateEntitlement(actorId);
+  store.get(actorId).scrapeUsageCount += 1;
+}
+
+function getScrapeSnapshot(actorId) {
+  const rec   = getOrCreateEntitlement(actorId);
+  const limit = rec.paid ? PAID_SCRAPE_DAILY_LIMIT : TRIAL_SCRAPE_DAILY_LIMIT;
+  const resetAt = new Date(rec.scrapeUsageDate);
+  resetAt.setDate(resetAt.getDate() + 1);
+  return {
+    scrapeUsed:      rec.scrapeUsageCount,
+    scrapeLimit:     limit,
+    scrapeRemaining: Math.max(0, limit - rec.scrapeUsageCount),
+    scrapeResetAt:   resetAt.toISOString(),
+  };
+}
+
 module.exports = {
   getOrCreateEntitlement,
   getEntitlement,
@@ -79,4 +113,7 @@ module.exports = {
   canUseCoach,
   incrementCoachUsage,
   getUsageSnapshot,
+  canUseScrape,
+  incrementScrapeUsage,
+  getScrapeSnapshot,
 };

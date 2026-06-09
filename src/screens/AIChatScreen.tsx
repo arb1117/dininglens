@@ -10,6 +10,7 @@ import { useMealContext } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
 import { API_BASE_URL } from '../config/api';
 import { useEntitlement } from '../hooks/useEntitlement';
+import { apiFetch } from '../services/apiClient';
 import PaywallPlaceholder from '../components/PaywallPlaceholder';
 
 const MAX_HISTORY = 10;
@@ -146,7 +147,7 @@ function buildGreeting(
 export default function AIChatScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { mealLog, goals, waterCups, exerciseLog, totalBurned } = useMealContext();
-  const { entitlement, loading: entLoading } = useEntitlement();
+  const { entitlement, loading: entLoading, refresh: refreshEntitlement } = useEntitlement();
 
   const today = new Date().toDateString();
 
@@ -188,28 +189,39 @@ export default function AIChatScreen() {
     };
   }, [mealLog, goals, today, waterCups, exerciseLog.length, totalBurned]);
 
+  const coachDisabled = entitlement !== null && entitlement.coachMessagesRemaining <= 0;
+
   const send = useCallback(async () => {
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text || loading || coachDisabled) return;
     setInput('');
 
     const userMsg: Message = { id: String(Date.now()), role: 'user', text };
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
 
-    // Keep last MAX_HISTORY messages as history (excluding the initial greeting)
     const history = messages.slice(-MAX_HISTORY).map(m => ({ role: m.role, content: m.text }));
 
     try {
-      const res = await fetch(`${API_BASE_URL}/chat`, {
+      const res = await apiFetch('/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, context, history }),
       });
-      if (!res.ok) throw new Error(`Server ${res.status}`);
       const data = await res.json();
+      if (res.status === 429 && data.error === 'coach_limit_reached') {
+        const limitMsg: Message = {
+          id: String(Date.now() + 1), role: 'assistant',
+          text: "You've reached today's message limit. Come back tomorrow!",
+          isError: true,
+        };
+        setMessages(prev => [...prev, limitMsg]);
+        refreshEntitlement();
+        return;
+      }
+      if (!res.ok) throw new Error(`Server ${res.status}`);
       const reply: Message = { id: String(Date.now() + 1), role: 'assistant', text: data.reply ?? 'Sorry, I had trouble responding.' };
       setMessages(prev => [...prev, reply]);
+      refreshEntitlement();
     } catch {
       const errMsg: Message = { id: String(Date.now() + 1), role: 'assistant', text: "AI Coach is temporarily unavailable. Try again in a moment.", isError: true };
       setMessages(prev => [...prev, errMsg]);
@@ -217,7 +229,7 @@ export default function AIChatScreen() {
       setLoading(false);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [input, loading, messages, context]);
+  }, [input, loading, coachDisabled, messages, context, refreshEntitlement]);
 
   function renderMessage({ item }: { item: Message }) {
     const isUser = item.role === 'user';
@@ -249,8 +261,15 @@ export default function AIChatScreen() {
   return (
     <SafeAreaView style={s.container}>
       <View style={s.titleBar}>
-        <Text style={s.title}>AI Coach</Text>
-        <Text style={s.subtitle}>Powered by Claude</Text>
+        <View>
+          <Text style={s.title}>AI Coach</Text>
+          <Text style={s.subtitle}>Powered by Claude</Text>
+        </View>
+        {entitlement && (
+          <Text style={[s.coachCounter, entitlement.coachMessagesRemaining === 0 && s.coachCounterEmpty]}>
+            {entitlement.coachMessagesRemaining}/{entitlement.coachMessagesLimit} today
+          </Text>
+        )}
       </View>
 
       <KeyboardAvoidingView
@@ -289,6 +308,12 @@ export default function AIChatScreen() {
           </Animated.ScrollView>
         )}
 
+        {coachDisabled && (
+          <View style={s.limitBanner}>
+            <Text style={s.limitBannerText}>Daily limit reached — resets at midnight</Text>
+          </View>
+        )}
+
         <View style={s.inputRow}>
           <TextInput
             style={s.input}
@@ -303,9 +328,9 @@ export default function AIChatScreen() {
             blurOnSubmit
           />
           <TouchableOpacity
-            style={[s.sendBtn, (!input.trim() || loading) && s.sendBtnDisabled]}
+            style={[s.sendBtn, (!input.trim() || loading || coachDisabled) && s.sendBtnDisabled]}
             onPress={send}
-            disabled={!input.trim() || loading}
+            disabled={!input.trim() || loading || coachDisabled}
           >
             <Text style={s.sendBtnText}>↑</Text>
           </TouchableOpacity>
@@ -318,9 +343,13 @@ export default function AIChatScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F0F0F' },
 
-  titleBar: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#2A2A2A' },
+  titleBar: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#2A2A2A', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   title: { fontSize: 22, fontWeight: '800', color: '#FFFFFF' },
   subtitle: { fontSize: 12, color: '#8A8A8A', marginTop: 2 },
+  coachCounter: { fontSize: 12, color: '#8A8A8A', fontWeight: '600' },
+  coachCounterEmpty: { color: '#FF6B6B' },
+  limitBanner: { backgroundColor: '#1A0A0A', paddingVertical: 8, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: '#3A1A1A' },
+  limitBannerText: { color: '#FF6B6B', fontSize: 12, textAlign: 'center' },
 
   list: { flex: 1 },
   listContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },

@@ -475,7 +475,7 @@ app.get('/search', aiLimiter, requireActiveEntitlement, async (req, res) => {
 // ─── /detect-restaurant ──────────────────────────────────────────────────────
 // Proxies Google Places Nearby Search + Details so the API key stays server-side
 
-app.post('/detect-restaurant', smallJsonBody, detectRestaurantLimiter, async (req, res) => {
+app.post('/detect-restaurant', smallJsonBody, detectRestaurantLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/detect-restaurant] request received');
   const body = validate(detectRestaurantSchema, req.body, res);
   if (!body) return;

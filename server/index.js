@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const dns = require('dns').promises;
 const net = require('net');
+const identityMiddleware = require('./middleware/identity');
 
 const AnthropicModule = require('@anthropic-ai/sdk');
 const Anthropic = AnthropicModule.Anthropic ?? AnthropicModule.default ?? AnthropicModule;
@@ -36,6 +37,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Request-Id', req.requestId);
   next();
 });
+app.use(identityMiddleware);
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

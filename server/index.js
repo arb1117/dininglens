@@ -341,7 +341,7 @@ app.post('/reanalyze', largeJsonBody, aiLimiter, requireActiveEntitlement, async
 // ─── /lookup-nutrition ────────────────────────────────────────────────────────
 // Single-item precise lookup via USDA FoodData Central
 
-app.post('/lookup-nutrition', smallJsonBody, lookupLimiter, async (req, res) => {
+app.post('/lookup-nutrition', smallJsonBody, lookupLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/lookup-nutrition] request received');
   const body = validate(lookupSchema, req.body, res);
   if (!body) return;
@@ -529,6 +529,10 @@ function normalizeScrapeKey(website) {
   }
 }
 
+function cacheScrapeEmptyResult(cacheKey) {
+  scrapeCache.set(cacheKey, { items: [], cachedAt: Date.now() });
+}
+
 app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement, async (req, res) => {
   if (!SCRAPE_MENU_ENABLED) {
     return res.status(503).json({
@@ -574,10 +578,12 @@ app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement,
     await assertPublicHttpsUrl(pageRes.url);
     const contentLength = Number(pageRes.headers.get('content-length') || 0);
     if (contentLength > MAX_SCRAPE_BYTES) {
+      cacheScrapeEmptyResult(cacheKey);
       return res.status(413).json({ error: 'Menu page is too large' });
     }
     const html = await pageRes.text();
     if (html.length > MAX_SCRAPE_BYTES) {
+      cacheScrapeEmptyResult(cacheKey);
       return res.status(413).json({ error: 'Menu page is too large' });
     }
 
@@ -608,6 +614,7 @@ app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement,
   } catch (err) {
     console.error('[/scrape-menu] Error:', err.message, 'requestId=', req.requestId);
     const status = err.statusCode || 500;
+    if (status >= 500) cacheScrapeEmptyResult(cacheKey);
     res.status(status).json({ error: status === 500 ? 'Menu scraping failed' : err.message });
   }
 });
@@ -615,7 +622,7 @@ app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement,
 // ─── /barcode ────────────────────────────────────────────────────────────────
 // Looks up a product by barcode via Open Food Facts
 
-app.get('/barcode', barcodeLimiter, async (req, res) => {
+app.get('/barcode', barcodeLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/barcode] request received');
   const params = validate(barcodeSchema, req.query, res);
   if (!params) return;
@@ -698,7 +705,7 @@ app.post('/chat', smallJsonBody, aiLimiter, requireActiveEntitlement, requireCoa
 // ─── /calculate-tdee ─────────────────────────────────────────────────────────
 // Mifflin-St Jeor BMR → Claude picks activity multiplier from plain-English desc.
 
-app.post('/calculate-tdee', smallJsonBody, aiLimiter, async (req, res) => {
+app.post('/calculate-tdee', smallJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/calculate-tdee] request received');
   const body = validate(tdeeSchema, req.body, res);
   if (!body) return;
@@ -770,6 +777,12 @@ app.post('/interpret-quantity', smallJsonBody, aiLimiter, requireActiveEntitleme
 
 app.get('/entitlements/me', smallJsonBody, async (req, res) => {
   try {
+    if (req.actor.type === 'anonymous') {
+      return res.status(401).json({
+        error: 'identity_required',
+        message: 'A stable install ID is required.',
+      });
+    }
     const rec        = entitlementService.getOrCreateEntitlement(req.actor.id);
     const snap       = entitlementService.getUsageSnapshot(req.actor.id);
     const scrapeSnap = entitlementService.getScrapeSnapshot(req.actor.id);

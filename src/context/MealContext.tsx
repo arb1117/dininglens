@@ -79,6 +79,10 @@ export type LoggedMeal = {
   period?: MealPeriod;   // optional for backward-compat; inferred from timestamp if absent
   items: MacroItem[];
   totals: { cal: number; protein: number; carbs: number; fat: number };
+  venueId?: string;
+  placeId?: string;
+  venueName?: string;
+  source?: 'camera' | 'manual' | 'barcode' | 'saved';
 };
 
 export type ExerciseEntry = {

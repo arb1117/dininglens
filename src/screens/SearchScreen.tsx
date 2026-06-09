@@ -13,6 +13,7 @@ import { apiFetch } from '../services/apiClient';
 import { useEntitlement } from '../hooks/useEntitlement';
 import PaywallPlaceholder from '../components/PaywallPlaceholder';
 import { listCustomFoods, saveCustomFood, recordCustomFoodUse } from '../services/customFoodService';
+import { getVenueItemSuggestions } from '../services/venueMemoryService';
 import type { StoredCustomFood } from '../storage/schema';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Search'>;
@@ -114,6 +115,24 @@ export default function SearchScreen({ navigation, route }: Props) {
   useEffect(() => {
     listCustomFoods().then(setCustomFoods).catch(() => {});
   }, []);
+
+  // Venue memory suggestions
+  const [venueMemoryResults, setVenueMemoryResults] = useState<DisplayResult[]>([]);
+  useEffect(() => {
+    const venueName = nearbyVenue?.name;
+    if (!venueName || !query.trim()) { setVenueMemoryResults([]); return; }
+    getVenueItemSuggestions(venueName, query.trim())
+      .then(entries => setVenueMemoryResults(entries.map(e => ({
+        name: e.itemName,
+        calories: e.calories,
+        protein: e.protein,
+        carbs: e.carbs,
+        fat: e.fat,
+        serving_size: e.servingDescription ?? '1 serving',
+        brand: `${e.venueName} · prev. logged`,
+      }))))
+      .catch(() => {});
+  }, [query, nearbyVenue]);
 
   // Custom food modal
   const [customVisible, setCustomVisible] = useState(false);
@@ -253,15 +272,17 @@ export default function SearchScreen({ navigation, route }: Props) {
 
     if (filter !== 'all') return apiDisplay;
 
-    // 'all': custom foods first, then history-derived, then deduped API
+    // 'all': custom foods first, venue memory, then history-derived, then deduped API
     const cfNames = new Set(customFoodResults.map(r => r.name.toLowerCase()));
+    const vmNames = new Set(venueMemoryResults.map(r => r.name.toLowerCase()));
     const myNames = new Set(myFoodResults.map(r => r.name.toLowerCase()));
     return [
       ...customFoodResults,
-      ...myFoodResults.filter(r => !cfNames.has(r.name.toLowerCase())),
-      ...apiDisplay.filter(r => !cfNames.has(r.name.toLowerCase()) && !myNames.has(r.name.toLowerCase())),
+      ...venueMemoryResults.filter(r => !cfNames.has(r.name.toLowerCase())),
+      ...myFoodResults.filter(r => !cfNames.has(r.name.toLowerCase()) && !vmNames.has(r.name.toLowerCase())),
+      ...apiDisplay.filter(r => !cfNames.has(r.name.toLowerCase()) && !vmNames.has(r.name.toLowerCase()) && !myNames.has(r.name.toLowerCase())),
     ];
-  }, [filter, apiResults, myFoodResults, customFoodResults]);
+  }, [filter, apiResults, myFoodResults, customFoodResults, venueMemoryResults]);
 
   // Sync nearby state if context venue changes (e.g. Camera loaded it before Search opened)
   useEffect(() => {

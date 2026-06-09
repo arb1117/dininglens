@@ -13,6 +13,7 @@ import { AnalysisResult } from '../services/visionService';
 import { apiFetch } from '../services/apiClient';
 import { saveMealFromItems } from '../services/savedMealService';
 import { applyCorrections, recordCorrection } from '../services/correctionMemoryService';
+import { recordVenueMeal } from '../services/venueMemoryService';
 import type { StoredMealItem } from '../storage/schema';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estimate'>;
@@ -523,7 +524,26 @@ export default function EstimateScreen({ navigation, route }: Props) {
         servingDescription: finalServingDescription,
       };
     });
-    addMeal({ id: String(Date.now()), timestamp: new Date().toISOString(), period: pickedPeriod, items: mealItems, totals });
+    addMeal({
+      id: String(Date.now()),
+      timestamp: new Date().toISOString(),
+      period: pickedPeriod,
+      items: mealItems,
+      totals,
+      venueId: venue?.id,
+      venueName: venue?.name,
+      source: source === 'barcode' ? 'barcode' : 'camera',
+    });
+    // Record each item in venue memory if we're at a known venue
+    if (venue?.name) {
+      mealItems.forEach(item => {
+        recordVenueMeal(venue.name, item.name, { calories: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat }, {
+          venueId: venue.id,
+          servingDescription: item.portion,
+          source: 'logged_meal',
+        }).catch(() => {});
+      });
+    }
     setSaveOfferItems(mealItems.map(item => ({
       name: item.name,
       portion: item.portion,

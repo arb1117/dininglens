@@ -14,6 +14,7 @@ import { apiFetch } from '../services/apiClient';
 import { saveMealFromItems } from '../services/savedMealService';
 import { applyCorrections, recordCorrection } from '../services/correctionMemoryService';
 import { recordVenueMeal } from '../services/venueMemoryService';
+import { findBestMenuMatch, applyMenuMatches } from '../utils/menuMatcher';
 import type { StoredMealItem } from '../storage/schema';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estimate'>;
@@ -125,10 +126,9 @@ function buildInitialItems(
   if (analysisResult.mode === 'dining_hall') {
     return analysisResult.detectedItems
       .map(detected => {
-        const match = menuItems.find(
-          m => m.name.toLowerCase() === detected.name.toLowerCase()
-        );
-        if (!match) return null;
+        const best = findBestMenuMatch(detected.name, menuItems);
+        if (!best) return null;
+        const { item: match } = best;
         const scale = detected.estimatedQuantityGrams != null
           ? detected.estimatedQuantityGrams / 100
           : detected.portionMultiplier;
@@ -147,7 +147,8 @@ function buildInitialItems(
   }
 
   const src: ItemSource = routeSource === 'barcode' ? 'barcode' : 'ai';
-  return analysisResult.detectedItems.map((item, i) => ({
+  const enriched = menuItems.length > 0 ? applyMenuMatches(analysisResult.detectedItems, menuItems) : analysisResult.detectedItems;
+  return enriched.map((item, i) => ({
     id: `generic-${i}`,
     name: item.name,
     cal: item.calories ?? 0,

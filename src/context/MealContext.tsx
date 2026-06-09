@@ -44,7 +44,8 @@ const DEFAULT_GOALS: UserGoals = {
   fat: 70,
 };
 
-export type MealPeriod = 'breakfast' | 'lunch' | 'dinner' | 'snacks';
+export type { MealPeriod, MacroItem, NutritionTotals, FoodItem, VenueMetadata } from '../types/nutrition';
+import type { MealPeriod, MacroItem, NutritionTotals } from '../types/nutrition';
 
 export function autoDetectPeriod(date = new Date()): MealPeriod {
   const h = date.getHours();
@@ -58,27 +59,12 @@ export function periodFromTimestamp(ts: string): MealPeriod {
   return autoDetectPeriod(new Date(ts));
 }
 
-export type MacroItem = {
-  name: string;
-  portion: string;
-  cal: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  // Optional structured quantity fields — absent on older logged meals
-  quantity?: number;
-  unit?: string;
-  count?: number;
-  sizeDescription?: string;
-  servingDescription?: string;
-};
-
 export type LoggedMeal = {
   id: string;
   timestamp: string;
   period?: MealPeriod;   // optional for backward-compat; inferred from timestamp if absent
   items: MacroItem[];
-  totals: { cal: number; protein: number; carbs: number; fat: number };
+  totals: NutritionTotals;
   venueId?: string;
   placeId?: string;
   venueName?: string;

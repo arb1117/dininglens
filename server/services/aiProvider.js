@@ -378,7 +378,7 @@ async function chatCoach(message, context, history) {
     { role: 'user', content: message + contextBlock },
   ];
 
-  const response = await client.messages.create({
+  const response = await callAnthropic({
     model: MODEL,
     max_tokens: 512,
     system: COACH_SYSTEM,
@@ -388,7 +388,7 @@ async function chatCoach(message, context, history) {
 }
 
 async function interpretQuantity(foodName, description, servingSize, caloriesPerServing) {
-  const response = await client.messages.create({
+  const response = await callAnthropic({
     model: MODEL,
     max_tokens: 150,
     messages: [{
@@ -409,7 +409,7 @@ Estimate the quantity as servings AND grams. Return ONLY JSON:
 }
 
 async function estimateExercise(name, duration, type) {
-  const response = await client.messages.create({
+  const response = await callAnthropic({
     model: MODEL,
     max_tokens: 128,
     messages: [{
@@ -422,7 +422,7 @@ async function estimateExercise(name, duration, type) {
 }
 
 async function parseMenuText(text, restaurantName) {
-  const response = await client.messages.create({
+  const response = await callAnthropic({
     model: MODEL,
     max_tokens: 1024,
     messages: [
@@ -445,7 +445,7 @@ async function parseMenuText(text, restaurantName) {
 }
 
 async function lookupFoodAI(query) {
-  const response = await client.messages.create({
+  const response = await callAnthropic({
     model: MODEL,
     max_tokens: 256,
     messages: [{
@@ -457,7 +457,7 @@ async function lookupFoodAI(query) {
 }
 
 async function searchFoodAI(query) {
-  const response = await client.messages.create({
+  const response = await callAnthropic({
     model: MODEL,
     max_tokens: 512,
     messages: [{
@@ -469,7 +469,7 @@ async function searchFoodAI(query) {
 }
 
 async function estimateTdeeMultiplier(activityDescription) {
-  const response = await client.messages.create({
+  const response = await callAnthropic({
     model: MODEL,
     max_tokens: 128,
     messages: [{

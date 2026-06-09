@@ -1,5 +1,5 @@
 import { MenuItem } from './menuService';
-import { API_BASE_URL } from '../config/api';
+import { apiFetch } from './apiClient';
 
 export type DetectedItem = {
   name: string;
@@ -30,9 +30,8 @@ export async function analyzeImage(
   imageBase64: string,
   menuItems?: MenuItem[]
 ): Promise<AnalysisResult> {
-  const response = await fetch(`${API_BASE_URL}/analyze`, {
+  const response = await apiFetch('/analyze', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ imageBase64, menuItems }),
   });
 

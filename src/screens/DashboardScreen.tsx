@@ -9,7 +9,7 @@ import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext, periodFromTimestamp } from '../context/MealContext';
 import type { ExerciseEntry, MacroItem, MealPeriod } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
-import { API_BASE_URL } from '../config/api';
+import { apiFetch } from '../services/apiClient';
 import { useBackendHealth } from '../hooks/useBackendHealth';
 import type { HealthStatus } from '../hooks/useBackendHealth';
 
@@ -163,9 +163,8 @@ function AddExerciseModal({ visible, onClose, onAdd }: ExerciseModalProps) {
     setEstimating(true);
     let kcal = 0;
     try {
-      const r = await fetch(`${API_BASE_URL}/estimate-exercise`, {
+      const r = await apiFetch('/estimate-exercise', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), duration: parseInt(duration) || 30, type }),
       });
       if (r.ok) {

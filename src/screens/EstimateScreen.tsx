@@ -10,7 +10,7 @@ import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem, LoggedMeal, MealPeriod, autoDetectPeriod } from '../context/MealContext';
 import { MenuItem } from '../services/menuService';
 import { AnalysisResult } from '../services/visionService';
-import { API_BASE_URL } from '../config/api';
+import { apiFetch } from '../services/apiClient';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estimate'>;
 
@@ -323,9 +323,8 @@ export default function EstimateScreen({ navigation, route }: Props) {
     setLookupLoading(true);
     setLookupError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/lookup`, {
+      const res = await apiFetch('/lookup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: searchQuery.trim() }),
       });
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -392,9 +391,8 @@ export default function EstimateScreen({ navigation, route }: Props) {
     setReanalyzing(true);
     setReanalyzeError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/reanalyze`, {
+      const res = await apiFetch('/reanalyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64,
           feedback: feedbackText.trim(),

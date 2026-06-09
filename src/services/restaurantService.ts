@@ -1,5 +1,5 @@
 import { findChainMatch, getChainMenuItems } from '../data/chainMenus';
-import { API_BASE_URL } from '../config/api';
+import { apiFetch } from './apiClient';
 
 export interface Restaurant {
   id: string;
@@ -28,9 +28,8 @@ export async function detectNearbyRestaurant(
 ): Promise<Restaurant | null> {
   try {
     // Step 1: Ask server to find nearest restaurant via Google Places
-    const placeRes = await fetch(`${API_BASE_URL}/detect-restaurant`, {
+    const placeRes = await apiFetch('/detect-restaurant', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lat: coords.lat, lon: coords.lon }),
     });
 
@@ -54,9 +53,8 @@ export async function detectNearbyRestaurant(
 
     // Step 3: Mom-and-pop — scrape website via server
     if (website) {
-      const scrapeRes = await fetch(`${API_BASE_URL}/scrape-menu`, {
+      const scrapeRes = await apiFetch('/scrape-menu', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ website, restaurantName: name, placeId }),
       });
 

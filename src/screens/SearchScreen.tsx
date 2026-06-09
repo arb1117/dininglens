@@ -9,7 +9,7 @@ import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem, MealPeriod, autoDetectPeriod } from '../context/MealContext';
 import { detectVenue, Venue } from '../services/venueService';
 import { fetchVenueMenu, MenuItem } from '../services/menuService';
-import { API_BASE_URL } from '../config/api';
+import { apiFetch } from '../services/apiClient';
 import { useEntitlement } from '../hooks/useEntitlement';
 import PaywallPlaceholder from '../components/PaywallPlaceholder';
 
@@ -176,7 +176,7 @@ export default function SearchScreen({ navigation, route }: Props) {
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${API_BASE_URL}/search?q=${encodeURIComponent(query.trim())}`);
+        const res = await apiFetch(`/search?q=${encodeURIComponent(query.trim())}`);
         if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
         setApiResults(Array.isArray(data) ? data : []);
@@ -350,9 +350,8 @@ export default function SearchScreen({ navigation, route }: Props) {
     setNlLoading(true);
     setNlExplanation(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/interpret-quantity`, {
+      const res = await apiFetch('/interpret-quantity', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           foodName: sheet.name,
           description: nlInput.trim(),

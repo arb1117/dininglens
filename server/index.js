@@ -905,9 +905,16 @@ app.post('/detect-restaurant', smallJsonBody, detectRestaurantLimiter, async (re
 // Results are cached in memory by placeId.
 
 const scrapeCache = new Map(); // placeId → { items, cachedAt }
-const SCRAPE_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const SCRAPE_CACHE_TTL_MS = Number(process.env.SCRAPE_CACHE_TTL_HOURS ?? 12) * 60 * 60 * 1000;
+const SCRAPE_MENU_ENABLED = (process.env.SCRAPE_MENU_ENABLED ?? 'true') === 'true';
 
 app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement, async (req, res) => {
+  if (!SCRAPE_MENU_ENABLED) {
+    return res.status(503).json({
+      error: 'scrape_disabled',
+      message: 'Menu scanning is temporarily unavailable.',
+    });
+  }
   console.log('[/scrape-menu] request received');
   const body = validate(scrapeSchema, req.body, res);
   if (!body) return;

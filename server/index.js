@@ -6,8 +6,10 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const dns = require('dns').promises;
 const net = require('net');
-const identityMiddleware   = require('./middleware/identity');
-const entitlementService   = require('./services/entitlementService');
+const identityMiddleware          = require('./middleware/identity');
+const entitlementService          = require('./services/entitlementService');
+const requireActiveEntitlement    = require('./middleware/requireActiveEntitlement');
+const requireCoachQuota           = require('./middleware/requireCoachQuota');
 
 const AnthropicModule = require('@anthropic-ai/sdk');
 const Anthropic = AnthropicModule.Anthropic ?? AnthropicModule.default ?? AnthropicModule;
@@ -450,7 +452,7 @@ const SUPPLEMENT_GUIDANCE = `For supplements, protein powders, fiber supplements
 
 // ─── /analyze ────────────────────────────────────────────────────────────────
 
-app.post('/analyze', largeJsonBody, aiLimiter, async (req, res) => {
+app.post('/analyze', largeJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/analyze] request received');
   const body = validate(analyzeSchema, req.body, res);
   if (!body) return;
@@ -580,7 +582,7 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
 
 // ─── /reanalyze ──────────────────────────────────────────────────────────────
 
-app.post('/reanalyze', largeJsonBody, aiLimiter, async (req, res) => {
+app.post('/reanalyze', largeJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/reanalyze] request received');
   const body = validate(reanalyzeSchema, req.body, res);
   if (!body) return;
@@ -741,7 +743,7 @@ function lookupCommonFood(query) {
 // ─── /lookup ─────────────────────────────────────────────────────────────────
 // "Add item manually" on EstimateScreen — tries OFF, falls back to Claude
 
-app.post('/lookup', smallJsonBody, aiLimiter, async (req, res) => {
+app.post('/lookup', smallJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/lookup] request received');
   const body = validate(lookupSchema, req.body, res);
   if (!body) return;
@@ -791,7 +793,7 @@ app.post('/lookup', smallJsonBody, aiLimiter, async (req, res) => {
 // ─── /search ─────────────────────────────────────────────────────────────────
 // Food search for SearchScreen — parallel OFF + USDA, dedup, Claude fallback
 
-app.get('/search', aiLimiter, async (req, res) => {
+app.get('/search', aiLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/search] request received');
   const params = validate(searchSchema, req.query, res);
   if (!params) return;
@@ -905,7 +907,7 @@ app.post('/detect-restaurant', smallJsonBody, detectRestaurantLimiter, async (re
 const scrapeCache = new Map(); // placeId → { items, cachedAt }
 const SCRAPE_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-app.post('/scrape-menu', smallJsonBody, scrapeLimiter, async (req, res) => {
+app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/scrape-menu] request received');
   const body = validate(scrapeSchema, req.body, res);
   if (!body) return;
@@ -1037,7 +1039,7 @@ app.get('/barcode', barcodeLimiter, async (req, res) => {
 
 // ─── /estimate-exercise ──────────────────────────────────────────────────────
 
-app.post('/estimate-exercise', smallJsonBody, aiLimiter, async (req, res) => {
+app.post('/estimate-exercise', smallJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
   const body = validate(exerciseSchema, req.body, res);
   if (!body) return;
   const { name, duration, type } = body;
@@ -1077,7 +1079,7 @@ The user can tap a suggested food to add it directly to their log.
 
 Never be preachy or guilt-trip about food choices.`;
 
-app.post('/chat', smallJsonBody, aiLimiter, async (req, res) => {
+app.post('/chat', smallJsonBody, aiLimiter, requireActiveEntitlement, requireCoachQuota, async (req, res) => {
   console.log('[/chat] request received');
   const body = validate(chatSchema, req.body, res);
   if (!body) return;
@@ -1172,7 +1174,7 @@ app.post('/calculate-tdee', smallJsonBody, aiLimiter, async (req, res) => {
 
 // ─── /interpret-quantity ─────────────────────────────────────────────────────
 
-app.post('/interpret-quantity', smallJsonBody, aiLimiter, async (req, res) => {
+app.post('/interpret-quantity', smallJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
   const body = validate(interpretSchema, req.body, res);
   if (!body) return;
   const { foodName, description, servingSize, caloriesPerServing } = body;

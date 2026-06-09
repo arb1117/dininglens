@@ -8,6 +8,7 @@ import { RootStackParamList } from '../../App';
 import { useMealContext, UserGoals } from '../context/MealContext';
 import { STORAGE_KEYS } from '../storage/storageKeys';
 import { getJSON, setJSON } from '../storage/storageClient';
+import { seedWeightFromProfile } from '../services/weightService';
 import {
   ActivityLevel,
   ACTIVITY_LABELS,
@@ -300,6 +301,9 @@ export default function GoalsScreen({ navigation }: Props) {
     await setJSON(STORAGE_KEYS.GOALS, g);
     setGoals(g);
     await persistProfile();
+    const weightN = parseFloat(weight) || 0;
+    const weightLbs = useKg ? weightN * 2.205 : weightN;
+    seedWeightFromProfile(weightLbs).catch(() => {});
     navigation.navigate('MainTabs');
   }
 
@@ -312,6 +316,9 @@ export default function GoalsScreen({ navigation }: Props) {
     await setJSON(STORAGE_KEYS.GOALS, g);
     setGoals(g);
     await persistProfile();
+    const weightN = parseFloat(weight) || 0;
+    const weightLbs = useKg ? weightN * 2.205 : weightN;
+    seedWeightFromProfile(weightLbs).catch(() => {});
     navigation.navigate('MainTabs');
   }
 

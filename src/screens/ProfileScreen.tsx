@@ -1,12 +1,14 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, TextInput, Platform, KeyboardAvoidingView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
 import { useEntitlement } from '../hooks/useEntitlement';
 import { listCustomFoods, deleteCustomFood } from '../services/customFoodService';
-import type { StoredCustomFood } from '../storage/schema';
+import { getLatestWeight, addWeightEntry, getTrend } from '../services/weightService';
+import type { WeightTrend } from '../services/weightService';
+import type { StoredCustomFood, StoredWeightEntry } from '../storage/schema';
 
 const APP_VERSION = '1.0.0-beta';
 
@@ -25,12 +27,36 @@ export default function ProfileScreen() {
   const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [customFoods, setCustomFoods] = useState<StoredCustomFood[]>([]);
   const [showAllCustomFoods, setShowAllCustomFoods] = useState(false);
+  const [latestWeight, setLatestWeight] = useState<StoredWeightEntry | null>(null);
+  const [weightTrend, setWeightTrend] = useState<WeightTrend | null>(null);
+  const [showWeightModal, setShowWeightModal] = useState(false);
+  const [weightInput, setWeightInput] = useState('');
+  const [weightNote, setWeightNote] = useState('');
 
   const refreshCustomFoods = useCallback(() => {
     listCustomFoods().then(setCustomFoods).catch(() => {});
   }, []);
 
+  const refreshWeight = useCallback(() => {
+    getLatestWeight().then(setLatestWeight).catch(() => {});
+    getTrend().then(setWeightTrend).catch(() => {});
+  }, []);
+
   useEffect(() => { refreshCustomFoods(); }, [refreshCustomFoods]);
+  useEffect(() => { refreshWeight(); }, [refreshWeight]);
+
+  function handleLogWeight() {
+    const w = parseFloat(weightInput);
+    if (!w || w <= 0) return;
+    addWeightEntry(w, undefined, weightNote.trim() || undefined)
+      .then(() => {
+        setWeightInput('');
+        setWeightNote('');
+        setShowWeightModal(false);
+        refreshWeight();
+      })
+      .catch(() => {});
+  }
 
   function handleDeleteCustomFood(id: string) {
     Alert.alert('Remove saved food?', undefined, [
@@ -97,6 +123,7 @@ export default function ProfileScreen() {
   }
 
   return (
+    <View style={{ flex: 1 }}>
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <Text style={s.header}>Profile</Text>
 
@@ -168,8 +195,30 @@ export default function ProfileScreen() {
         <Text style={s.historyBtnText}>📋  View Meal History</Text>
       </TouchableOpacity>
 
-      {/* My Foods */}
+      {/* Weight */}
       <View style={[s.card, { marginTop: 16 }]}>
+        <View style={s.myFoodsHeader}>
+          <Text style={s.cardTitle}>Weight</Text>
+          {weightTrend !== null && (
+            <Text style={[s.trendBadge,
+              weightTrend === 'up' ? s.trendUp : weightTrend === 'down' ? s.trendDown : s.trendFlat
+            ]}>
+              {weightTrend === 'up' ? '▲ trending up' : weightTrend === 'down' ? '▼ trending down' : '→ stable'}
+            </Text>
+          )}
+        </View>
+        {latestWeight !== null ? (
+          <Text style={s.weightDisplay}>{latestWeight.weightLbs} lbs</Text>
+        ) : (
+          <Text style={s.myFoodsEmpty}>No weight entries yet</Text>
+        )}
+        <TouchableOpacity style={[s.editBtn, { marginTop: 12 }]} onPress={() => setShowWeightModal(true)}>
+          <Text style={s.editBtnText}>Log weight</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* My Foods */}
+      <View style={[s.card, { marginTop: 0 }]}>
         <View style={s.myFoodsHeader}>
           <Text style={s.cardTitle}>My Foods</Text>
           <Text style={s.myFoodsCount}>{customFoods.length} saved</Text>
@@ -215,6 +264,44 @@ export default function ProfileScreen() {
         <Text style={s.version}>DiningLens {APP_VERSION}</Text>
       </TouchableOpacity>
     </ScrollView>
+
+    {/* Log Weight Modal */}
+    <Modal visible={showWeightModal} transparent animationType="slide" onRequestClose={() => setShowWeightModal(false)}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <TouchableOpacity style={wm.backdrop} activeOpacity={1} onPress={() => setShowWeightModal(false)} />
+        <View style={wm.sheet}>
+          <View style={wm.handle} />
+          <Text style={wm.title}>Log Weight</Text>
+          <Text style={wm.fieldLabel}>Weight (lbs)</Text>
+          <TextInput
+            style={wm.input}
+            value={weightInput}
+            onChangeText={setWeightInput}
+            keyboardType="decimal-pad"
+            placeholder="175.5"
+            placeholderTextColor="#555"
+            autoFocus
+            selectTextOnFocus
+          />
+          <Text style={wm.fieldLabel}>Note (optional)</Text>
+          <TextInput
+            style={wm.input}
+            value={weightNote}
+            onChangeText={setWeightNote}
+            placeholder="morning, post-workout…"
+            placeholderTextColor="#555"
+          />
+          <TouchableOpacity
+            style={[wm.saveBtn, !weightInput.trim() && wm.saveBtnDisabled]}
+            onPress={handleLogWeight}
+            disabled={!weightInput.trim()}
+          >
+            <Text style={wm.saveBtnText}>Save</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+    </View>
   );
 }
 
@@ -280,6 +367,12 @@ const s = StyleSheet.create({
   showMoreBtn: { paddingTop: 10, alignItems: 'center' },
   showMoreText: { fontSize: 13, color: '#00E5A0', fontWeight: '600' },
 
+  weightDisplay: { fontSize: 32, fontWeight: '900', color: '#FFFFFF', marginTop: 4 },
+  trendBadge: { fontSize: 12, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  trendUp: { color: '#FF6B6B', backgroundColor: '#2A1010' },
+  trendDown: { color: '#00E5A0', backgroundColor: '#0A2A1A' },
+  trendFlat: { color: '#8A8A8A', backgroundColor: '#2A2A2A' },
+
   hkNotice: {
     marginTop: 16, backgroundColor: '#1A1A1A', borderRadius: 12, padding: 14,
     borderWidth: 1, borderColor: '#2A2A2A',
@@ -287,4 +380,23 @@ const s = StyleSheet.create({
   hkNoticeText: { fontSize: 12, color: '#555', lineHeight: 18 },
 
   version: { fontSize: 12, color: '#555', textAlign: 'center', marginTop: 32 },
+});
+
+const wm = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: '#1A1A1A', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 24, paddingBottom: 40, borderTopWidth: 1, borderColor: '#2A2A2A',
+  },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#3A3A3A', alignSelf: 'center', marginTop: 12, marginBottom: 20 },
+  title: { fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginBottom: 20 },
+  fieldLabel: { fontSize: 12, fontWeight: '600', color: '#8A8A8A', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
+  input: {
+    backgroundColor: '#2A2A2A', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 16, color: '#FFFFFF', marginBottom: 18,
+  },
+  saveBtn: { backgroundColor: '#00E5A0', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  saveBtnDisabled: { opacity: 0.4 },
+  saveBtnText: { color: '#0F0F0F', fontSize: 16, fontWeight: '700' },
 });

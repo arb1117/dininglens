@@ -13,7 +13,9 @@ import { apiFetch } from '../services/apiClient';
 import { useBackendHealth } from '../hooks/useBackendHealth';
 import type { HealthStatus } from '../hooks/useBackendHealth';
 import { listSavedMeals, logSavedMeal, deleteSavedMeal } from '../services/savedMealService';
-import type { StoredSavedMeal } from '../storage/schema';
+import { getLatestWeight, getTrend } from '../services/weightService';
+import type { WeightTrend } from '../services/weightService';
+import type { StoredSavedMeal, StoredWeightEntry } from '../storage/schema';
 
 const PERIOD_ORDER: MealPeriod[] = ['breakfast', 'lunch', 'dinner', 'snacks'];
 const PERIOD_LABELS: Record<MealPeriod, string> = {
@@ -387,8 +389,14 @@ export default function DashboardScreen() {
   const [savedMealsExpanded, setSavedMealsExpanded] = useState(false);
   const [dashToast, setDashToast] = useState<string | null>(null);
 
+  // Weight widget
+  const [latestWeight, setLatestWeight] = useState<StoredWeightEntry | null>(null);
+  const [weightTrend, setWeightTrend] = useState<WeightTrend | null>(null);
+
   useEffect(() => {
     listSavedMeals().then(meals => setSavedMeals(meals.slice(0, 8))).catch(() => {});
+    getLatestWeight().then(setLatestWeight).catch(() => {});
+    getTrend().then(setWeightTrend).catch(() => {});
   }, []);
 
   function handleLogSavedMeal(id: string) {
@@ -519,6 +527,24 @@ export default function DashboardScreen() {
                 </TouchableOpacity>
               </View>
             ))}
+          </View>
+        )}
+
+        {/* Weight widget — only for body-change goals */}
+        {(['lose', 'build', 'recomposition'] as const).includes(goals.preset as 'lose' | 'build' | 'recomposition') && latestWeight !== null && (
+          <View style={s.card}>
+            <View style={s.cardHeaderRow}>
+              <Text style={s.cardTitle}>⚖️ Weight</Text>
+              {weightTrend !== null && (
+                <Text style={[s.weightTrend,
+                  weightTrend === 'up' ? s.weightTrendUp : weightTrend === 'down' ? s.weightTrendDown : s.weightTrendFlat
+                ]}>
+                  {weightTrend === 'up' ? '▲' : weightTrend === 'down' ? '▼' : '→'}
+                </Text>
+              )}
+            </View>
+            <Text style={s.weightWidgetVal}>{latestWeight.weightLbs} lbs</Text>
+            <Text style={s.weightWidgetSub}>Last logged · {latestWeight.date}</Text>
           </View>
         )}
 
@@ -693,4 +719,11 @@ const s = StyleSheet.create({
   },
   savedMealLogBtnText: { fontSize: 13, fontWeight: '700', color: '#0F0F0F' },
   savedMealDeleteText: { fontSize: 14, color: '#555', paddingHorizontal: 4 },
+
+  weightWidgetVal: { fontSize: 28, fontWeight: '900', color: '#FFFFFF', marginTop: 6 },
+  weightWidgetSub: { fontSize: 11, color: '#8A8A8A', marginTop: 3 },
+  weightTrend: { fontSize: 14, fontWeight: '800', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  weightTrendUp: { color: '#FF6B6B', backgroundColor: '#2A1010' },
+  weightTrendDown: { color: '#00E5A0', backgroundColor: '#0A2A1A' },
+  weightTrendFlat: { color: '#8A8A8A', backgroundColor: '#2A2A2A' },
 });

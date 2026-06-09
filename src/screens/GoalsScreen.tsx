@@ -3,10 +3,11 @@ import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
   ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useMealContext, UserGoals } from '../context/MealContext';
+import { STORAGE_KEYS } from '../storage/storageKeys';
+import { getJSON, setJSON } from '../storage/storageClient';
 import {
   ActivityLevel,
   ACTIVITY_LABELS,
@@ -20,9 +21,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Goals'>;
 
 type GoalKey = 'lose' | 'maintain' | 'build' | 'recomposition';
 type Step = 'goal' | 'profile' | 'activity' | 'result' | 'manual';
-
-const GOALS_KEY   = '@dininglens_goals';
-const PROFILE_KEY = '@dininglens_profile';
 
 const GOAL_CARDS: { key: GoalKey; emoji: string; label: string; desc: string }[] = [
   { key: 'lose',          emoji: '🔥', label: 'Lose Fat',         desc: 'Burn fat with a calorie deficit' },
@@ -142,36 +140,30 @@ export default function GoalsScreen({ navigation }: Props) {
 
   // ── Load existing data on mount (returning user editing from Profile) ─────
   useEffect(() => {
-    AsyncStorage.getItem(GOALS_KEY).then(raw => {
-      if (!raw) return;
-      try {
-        const g = JSON.parse(raw) as UserGoals;
-        if (GOAL_CARDS.find(c => c.key === g.preset)) setSelectedGoal(g.preset as GoalKey);
-        setManCal(String(g.calories));
-        setManProtein(String(g.protein));
-        setManCarbs(String(g.carbs));
-        setManFat(String(g.fat));
-      } catch {}
+    getJSON<UserGoals | null>(STORAGE_KEYS.GOALS, null).then(g => {
+      if (!g || typeof g !== 'object') return;
+      if (GOAL_CARDS.find(c => c.key === g.preset)) setSelectedGoal(g.preset as GoalKey);
+      setManCal(String(g.calories));
+      setManProtein(String(g.protein));
+      setManCarbs(String(g.carbs));
+      setManFat(String(g.fat));
     });
-    AsyncStorage.getItem(PROFILE_KEY).then(raw => {
-      if (!raw) return;
-      try {
-        const p = JSON.parse(raw);
-        setUseMetric(p.useMetric ?? false);
-        setHeightFt(p.heightFt ? String(p.heightFt) : '5');
-        setHeightIn(p.heightIn ? String(p.heightIn) : '10');
-        setHeightCm(p.heightCm ? String(p.heightCm) : '');
-        setUseKg(p.useKg ?? false);
-        setWeight(p.weight ? String(p.weight) : '');
-        setAge(p.age ? String(p.age) : '');
-        setSex(p.sex ?? null);
-        setActivityDesc(p.activityDescription ?? '');
-        if (p.dailySteps) setDailySteps(String(p.dailySteps));
-        if (p.workoutsPerWeek !== undefined) setWorkoutsPerWeek(String(p.workoutsPerWeek));
-        if (p.workoutIntensity) setWorkoutIntensity(p.workoutIntensity);
-        if (p.jobType) setJobType(p.jobType);
-        if (p.activityLevel) setActivityLevel(p.activityLevel);
-      } catch {}
+    getJSON<Record<string, unknown> | null>(STORAGE_KEYS.PROFILE, null).then(p => {
+      if (!p || typeof p !== 'object') return;
+      setUseMetric((p.useMetric as boolean) ?? false);
+      setHeightFt(p.heightFt ? String(p.heightFt) : '5');
+      setHeightIn(p.heightIn ? String(p.heightIn) : '10');
+      setHeightCm(p.heightCm ? String(p.heightCm) : '');
+      setUseKg((p.useKg as boolean) ?? false);
+      setWeight(p.weight ? String(p.weight) : '');
+      setAge(p.age ? String(p.age) : '');
+      setSex((p.sex as 'male' | 'female' | 'other' | null) ?? null);
+      setActivityDesc((p.activityDescription as string) ?? '');
+      if (p.dailySteps) setDailySteps(String(p.dailySteps));
+      if (p.workoutsPerWeek !== undefined) setWorkoutsPerWeek(String(p.workoutsPerWeek));
+      if (p.workoutIntensity) setWorkoutIntensity(p.workoutIntensity as 'light' | 'moderate' | 'intense');
+      if (p.jobType) setJobType(p.jobType as 'desk' | 'lightly_active' | 'very_active');
+      if (p.activityLevel) setActivityLevel(p.activityLevel as typeof activityLevel);
     });
   }, []);
 
@@ -300,12 +292,12 @@ export default function GoalsScreen({ navigation }: Props) {
       calculatedFat:      calcResult?.fat,
       calculatedCarbs:    calcResult?.carbs,
     };
-    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile)).catch(() => {});
+    await setJSON(STORAGE_KEYS.PROFILE, profile);
   }
 
   async function saveAndGo(cal: number, protein: number, carbs: number, fat: number) {
     const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
-    await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(g));
+    await setJSON(STORAGE_KEYS.GOALS, g);
     setGoals(g);
     await persistProfile();
     navigation.navigate('MainTabs');
@@ -317,7 +309,7 @@ export default function GoalsScreen({ navigation }: Props) {
     const carbs   = parseInt(manCarbs)   || 220;
     const fat     = parseInt(manFat)     || 70;
     const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
-    await AsyncStorage.setItem(GOALS_KEY, JSON.stringify(g));
+    await setJSON(STORAGE_KEYS.GOALS, g);
     setGoals(g);
     await persistProfile();
     navigation.navigate('MainTabs');

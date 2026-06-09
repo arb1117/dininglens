@@ -1,11 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MenuItem, FAKE_MENU } from '../services/menuService';
 import { Venue } from '../services/venueService';
-
-const STORAGE_KEY      = '@dininglens_meal_log';
-const GOALS_KEY        = '@dininglens_goals';
-const LAST_LOGGED_KEY  = '@dininglens_last_logged';
+import { STORAGE_KEYS, toDateKey } from '../storage/storageKeys';
+import { getJSON, setJSON, removeKey } from '../storage/storageClient';
+import { migrateStorageIfNeeded } from '../storage/migrations';
 
 export type UserGoals = {
   preset: 'lose' | 'maintain' | 'build' | 'recomposition';
@@ -143,34 +141,29 @@ export function MealProvider({ children }: { children: ReactNode }) {
   const [menuItems, setMenuItems] = useState<MenuItem[]>(FAKE_MENU);
   const [periodLabel, setPeriodLabel] = useState('Dinner');
   const [venue, setVenue] = useState<Venue | null>(null);
-  const today = new Date().toDateString();
-  const waterKey = `@dininglens_water_${today}`;
-  const exerciseKey = `@dininglens_exercise_${today}`;
+  const dateKey = toDateKey(new Date());
+  const waterKey = STORAGE_KEYS.WATER(dateKey);
+  const exerciseKey = STORAGE_KEYS.EXERCISE(dateKey);
   const [waterCups, setWaterCups] = useState(0);
   const [exerciseLog, setExerciseLog] = useState<ExerciseEntry[]>([]);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then(raw => {
-      if (raw) {
-        try { setMealLog(JSON.parse(raw)); } catch {}
-      }
-    });
-    AsyncStorage.getItem(GOALS_KEY).then(raw => {
-      if (raw) {
-        try { setGoalsState(JSON.parse(raw)); } catch {}
-      }
-    });
+    async function init() {
+      await migrateStorageIfNeeded();
+      const meals = await getJSON<LoggedMeal[]>(STORAGE_KEYS.MEAL_LOG, [], v => Array.isArray(v));
+      setMealLog(Array.isArray(meals) ? meals : []);
+      const g = await getJSON<UserGoals | null>(STORAGE_KEYS.GOALS, null);
+      if (g && typeof g === 'object' && 'calories' in g) setGoalsState(g);
+    }
+    init().catch(() => {});
   }, []);
 
   useEffect(() => {
-    AsyncStorage.getItem(waterKey)
-      .then(v => setWaterCups(v ? parseInt(v) : 0))
+    getJSON<number>(waterKey, 0, v => typeof v === 'number')
+      .then(n => setWaterCups(typeof n === 'number' && n >= 0 ? Math.min(n, 20) : 0))
       .catch(() => {});
-    AsyncStorage.getItem(exerciseKey)
-      .then(raw => {
-        if (raw) try { setExerciseLog(JSON.parse(raw)); } catch {}
-        else setExerciseLog([]);
-      })
+    getJSON<ExerciseEntry[]>(exerciseKey, [], v => Array.isArray(v))
+      .then(entries => setExerciseLog(Array.isArray(entries) ? entries : []))
       .catch(() => {});
   }, [waterKey, exerciseKey]);
 
@@ -181,8 +174,8 @@ export function MealProvider({ children }: { children: ReactNode }) {
   function addMeal(meal: LoggedMeal) {
     setMealLog(prev => {
       const next = [meal, ...prev];
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
-      AsyncStorage.setItem(LAST_LOGGED_KEY, new Date().toDateString()).catch(() => {});
+      setJSON(STORAGE_KEYS.MEAL_LOG, next);
+      setJSON(STORAGE_KEYS.LAST_LOGGED, new Date().toDateString());
       return next;
     });
   }
@@ -203,7 +196,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
         );
         return { ...meal, items: newItems, totals };
       });
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      setJSON(STORAGE_KEYS.MEAL_LOG, next);
       return next;
     });
   }
@@ -211,7 +204,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
   function deleteMeal(mealId: string) {
     setMealLog(prev => {
       const next = prev.filter(m => m.id !== mealId);
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      setJSON(STORAGE_KEYS.MEAL_LOG, next);
       return next;
     });
   }
@@ -235,7 +228,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
           return { ...meal, items: newItems, totals };
         })
         .filter((m): m is LoggedMeal => m !== null);
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      setJSON(STORAGE_KEYS.MEAL_LOG, next);
       return next;
     });
   }
@@ -243,7 +236,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
   function toggleWater(index: number) {
     setWaterCups(prev => {
       const next = index < prev ? index : index + 1;
-      AsyncStorage.setItem(waterKey, String(next)).catch(() => {});
+      setJSON(waterKey, next);
       return next;
     });
   }
@@ -252,7 +245,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
     const full: ExerciseEntry = { ...entry, id: String(Date.now()) };
     setExerciseLog(prev => {
       const next = [...prev, full];
-      AsyncStorage.setItem(exerciseKey, JSON.stringify(next)).catch(() => {});
+      setJSON(exerciseKey, next);
       return next;
     });
   }
@@ -260,8 +253,8 @@ export function MealProvider({ children }: { children: ReactNode }) {
   function resetDayStats() {
     setWaterCups(0);
     setExerciseLog([]);
-    AsyncStorage.removeItem(waterKey).catch(() => {});
-    AsyncStorage.removeItem(exerciseKey).catch(() => {});
+    removeKey(waterKey);
+    removeKey(exerciseKey);
   }
 
   const totalBurned = exerciseLog.reduce((a, e) => a + e.caloriesBurned, 0);

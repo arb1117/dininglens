@@ -1,10 +1,12 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
 import { useEntitlement } from '../hooks/useEntitlement';
+import { listCustomFoods, deleteCustomFood } from '../services/customFoodService';
+import type { StoredCustomFood } from '../storage/schema';
 
 const APP_VERSION = '1.0.0-beta';
 
@@ -21,6 +23,25 @@ export default function ProfileScreen() {
   const { entitlement } = useEntitlement();
   const debugTaps = useRef(0);
   const debugTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [customFoods, setCustomFoods] = useState<StoredCustomFood[]>([]);
+  const [showAllCustomFoods, setShowAllCustomFoods] = useState(false);
+
+  const refreshCustomFoods = useCallback(() => {
+    listCustomFoods().then(setCustomFoods).catch(() => {});
+  }, []);
+
+  useEffect(() => { refreshCustomFoods(); }, [refreshCustomFoods]);
+
+  function handleDeleteCustomFood(id: string) {
+    Alert.alert('Remove saved food?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive', onPress: () => {
+          deleteCustomFood(id).then(refreshCustomFoods).catch(() => {});
+        },
+      },
+    ]);
+  }
 
   function trialStatusText(): string | null {
     if (!entitlement) return null;
@@ -147,6 +168,41 @@ export default function ProfileScreen() {
         <Text style={s.historyBtnText}>📋  View Meal History</Text>
       </TouchableOpacity>
 
+      {/* My Foods */}
+      <View style={[s.card, { marginTop: 16 }]}>
+        <View style={s.myFoodsHeader}>
+          <Text style={s.cardTitle}>My Foods</Text>
+          <Text style={s.myFoodsCount}>{customFoods.length} saved</Text>
+        </View>
+        {customFoods.length === 0 ? (
+          <Text style={s.myFoodsEmpty}>Foods you log manually are saved here for quick re-use</Text>
+        ) : (
+          <>
+            {(showAllCustomFoods ? customFoods : customFoods.slice(0, 4)).map(f => (
+              <View key={f.id} style={s.myFoodRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.myFoodName} numberOfLines={1}>{f.name}</Text>
+                  <Text style={s.myFoodMeta}>{f.calories} cal · used {f.useCount}×</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => handleDeleteCustomFood(f.id)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={s.myFoodDelete}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            {customFoods.length > 4 && (
+              <TouchableOpacity onPress={() => setShowAllCustomFoods(v => !v)} style={s.showMoreBtn}>
+                <Text style={s.showMoreText}>
+                  {showAllCustomFoods ? 'Show less' : `Show all ${customFoods.length} foods`}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+      </View>
+
       {/* HealthKit notice */}
       <View style={s.hkNotice}>
         <Text style={s.hkNoticeText}>
@@ -210,6 +266,19 @@ const s = StyleSheet.create({
     borderRadius: 8, borderWidth: 1, borderColor: '#3A1A1A',
   },
   resetBtnText: { color: '#FF6B6B', fontSize: 13, fontWeight: '600' },
+
+  myFoodsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  myFoodsCount: { fontSize: 12, color: '#8A8A8A', fontWeight: '600' },
+  myFoodsEmpty: { fontSize: 13, color: '#555', lineHeight: 18 },
+  myFoodRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#2A2A2A',
+  },
+  myFoodName: { fontSize: 14, color: '#FFFFFF', fontWeight: '600' },
+  myFoodMeta: { fontSize: 11, color: '#8A8A8A', marginTop: 2 },
+  myFoodDelete: { fontSize: 14, color: '#555', paddingHorizontal: 6 },
+  showMoreBtn: { paddingTop: 10, alignItems: 'center' },
+  showMoreText: { fontSize: 13, color: '#00E5A0', fontWeight: '600' },
 
   hkNotice: {
     marginTop: 16, backgroundColor: '#1A1A1A', borderRadius: 12, padding: 14,

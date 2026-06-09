@@ -12,6 +12,8 @@ import { fetchVenueMenu, MenuItem } from '../services/menuService';
 import { apiFetch } from '../services/apiClient';
 import { useEntitlement } from '../hooks/useEntitlement';
 import PaywallPlaceholder from '../components/PaywallPlaceholder';
+import { listCustomFoods, saveCustomFood, recordCustomFoodUse } from '../services/customFoodService';
+import type { StoredCustomFood } from '../storage/schema';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Search'>;
 
@@ -49,6 +51,7 @@ type DisplayResult = {
   fat: number;
   serving_size: string;
   brand?: string;
+  customFoodId?: string;
 };
 
 type SheetState = {
@@ -58,6 +61,7 @@ type SheetState = {
   baseCarbs: number;
   baseFat: number;
   servingSize: string;
+  customFoodId?: string;
 };
 
 function round1(n: number) { return Math.round(n * 10) / 10; }
@@ -105,6 +109,12 @@ export default function SearchScreen({ navigation, route }: Props) {
   );
   const periodLocked = !!selectedPeriod;
 
+  // Custom foods from persistent store
+  const [customFoods, setCustomFoods] = useState<StoredCustomFood[]>([]);
+  useEffect(() => {
+    listCustomFoods().then(setCustomFoods).catch(() => {});
+  }, []);
+
   // Custom food modal
   const [customVisible, setCustomVisible] = useState(false);
   const [customName, setCustomName]       = useState('');
@@ -131,6 +141,15 @@ export default function SearchScreen({ navigation, route }: Props) {
       items:     [item],
       totals:    { cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
     });
+    saveCustomFood({
+      name: item.name,
+      servingSize: '1 serving',
+      calories: item.cal,
+      protein: item.protein,
+      carbs: item.carbs,
+      fat: item.fat,
+      source: 'manual',
+    }).then(saved => setCustomFoods(prev => [saved, ...prev])).catch(() => {});
     setCustomVisible(false);
     setCustomName(''); setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
     setToastName(name);
@@ -166,6 +185,25 @@ export default function SearchScreen({ navigation, route }: Props) {
       }));
   }, [myFoods, query]);
 
+  const customFoodResults = useMemo((): DisplayResult[] => {
+    if (!query.trim()) return [];
+    const q = query.toLowerCase();
+    return customFoods
+      .filter(f => f.name.toLowerCase().includes(q) || (f.brand && f.brand.toLowerCase().includes(q)))
+      .sort((a, b) => b.useCount - a.useCount)
+      .slice(0, 8)
+      .map(f => ({
+        name:        f.name,
+        calories:    f.calories,
+        protein:     f.protein,
+        carbs:       f.carbs,
+        fat:         f.fat,
+        serving_size: f.servingSize,
+        brand:       f.brand,
+        customFoodId: f.id,
+      }));
+  }, [customFoods, query]);
+
   // API search — debounced 400ms, skipped when filter is myfoods
   useEffect(() => {
     if (filter === 'myfoods' || !query.trim()) {
@@ -190,9 +228,6 @@ export default function SearchScreen({ navigation, route }: Props) {
   }, [query, filter]);
 
   const displayResults = useMemo((): DisplayResult[] => {
-    if (filter === 'myfoods') return myFoodResults;
-
-    // 'common' = USDA only; 'all' = everything
     const apiDisplay: DisplayResult[] = apiResults
       .filter(r => filter !== 'common' || !r.source || r.source === 'usda')
       .map(r => {
@@ -208,15 +243,25 @@ export default function SearchScreen({ navigation, route }: Props) {
         };
       });
 
+    if (filter === 'myfoods') {
+      const cfNames = new Set(customFoodResults.map(r => r.name.toLowerCase()));
+      return [
+        ...customFoodResults,
+        ...myFoodResults.filter(r => !cfNames.has(r.name.toLowerCase())),
+      ];
+    }
+
     if (filter !== 'all') return apiDisplay;
 
-    // 'all': my foods first, then deduped API results
+    // 'all': custom foods first, then history-derived, then deduped API
+    const cfNames = new Set(customFoodResults.map(r => r.name.toLowerCase()));
     const myNames = new Set(myFoodResults.map(r => r.name.toLowerCase()));
     return [
-      ...myFoodResults,
-      ...apiDisplay.filter(r => !myNames.has(r.name.toLowerCase())),
+      ...customFoodResults,
+      ...myFoodResults.filter(r => !cfNames.has(r.name.toLowerCase())),
+      ...apiDisplay.filter(r => !cfNames.has(r.name.toLowerCase()) && !myNames.has(r.name.toLowerCase())),
     ];
-  }, [filter, apiResults, myFoodResults]);
+  }, [filter, apiResults, myFoodResults, customFoodResults]);
 
   // Sync nearby state if context venue changes (e.g. Camera loaded it before Search opened)
   useEffect(() => {
@@ -271,12 +316,13 @@ export default function SearchScreen({ navigation, route }: Props) {
   function openSheet(item: DisplayResult) {
     Keyboard.dismiss();
     setSheet({
-      name:        item.name,
-      baseCal:     item.calories,
-      baseProtein: item.protein,
-      baseCarbs:   item.carbs,
-      baseFat:     item.fat,
-      servingSize: item.serving_size,
+      name:         item.name,
+      baseCal:      item.calories,
+      baseProtein:  item.protein,
+      baseCarbs:    item.carbs,
+      baseFat:      item.fat,
+      servingSize:  item.serving_size,
+      customFoodId: item.customFoodId,
     });
     resetServingState();
   }
@@ -394,6 +440,7 @@ export default function SearchScreen({ navigation, route }: Props) {
 
   function handleLogIt() {
     const item = buildItem();
+    const cfId = sheet?.customFoodId;
     setSheet(null);
     addMeal({
       id:        String(Date.now()),
@@ -402,6 +449,11 @@ export default function SearchScreen({ navigation, route }: Props) {
       items:     [item],
       totals:    { cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
     });
+    if (cfId) {
+      recordCustomFoodUse(cfId)
+        .then(() => listCustomFoods().then(setCustomFoods))
+        .catch(() => {});
+    }
     setToastName(item.name);
     setTimeout(() => { setToastName(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }, 1200);
   }

@@ -12,6 +12,7 @@ import { MenuItem } from '../services/menuService';
 import { AnalysisResult } from '../services/visionService';
 import { apiFetch } from '../services/apiClient';
 import { saveMealFromItems } from '../services/savedMealService';
+import { applyCorrections, recordCorrection } from '../services/correctionMemoryService';
 import type { StoredMealItem } from '../storage/schema';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estimate'>;
@@ -269,6 +270,16 @@ export default function EstimateScreen({ navigation, route }: Props) {
     });
   }, [navigation]);
 
+  // Apply stored corrections to AI-detected items on mount
+  useEffect(() => {
+    if (items.length === 0) return;
+    applyCorrections(items).then(corrected => {
+      const changed = corrected.some((c, i) => c !== items[i]);
+      if (changed) setItems(corrected);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const filteredMenuItems = useMemo(() =>
     searchQuery.trim()
       ? menuItems.filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -408,6 +419,18 @@ export default function EstimateScreen({ navigation, route }: Props) {
       }
       const newResult = await res.json() as AnalysisResult;
       const newItems = buildInitialItems(newResult, menuItems, source);
+      // Record name corrections: if old item[i] and new item[i] differ, remember the mapping
+      items.forEach((oldItem, idx) => {
+        const newItem = newItems[idx];
+        if (newItem && newItem.name !== oldItem.name) {
+          recordCorrection(oldItem.name, newItem.name, {
+            calories: newItem.cal,
+            protein: newItem.protein,
+            carbs: newItem.carbs,
+            fat: newItem.fat,
+          }).catch(() => {});
+        }
+      });
       setItems(newItems);
       setPortions(Object.fromEntries(newItems.map(i => [i.id, 'medium' as VisualPortion])));
       setFeedbackText('');

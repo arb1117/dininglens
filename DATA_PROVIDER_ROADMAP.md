@@ -32,7 +32,7 @@ Planned providers (in priority order):
 1. **CommonFoods** — local JSON, zero-latency, ~200 staple foods (exists today)
 2. **OpenFoodFacts** — free, good branded coverage (exists today)
 3. **USDA FoodData Central** — authoritative nutrition data (exists today)
-4. **Nutritionix** — premium, better restaurant data (planned)
+4. **Nutritionix** — premium, better restaurant data (stub in `src/services/providers/NutritionixProvider.ts`; not yet licensed)
 5. **Spoonacular** — recipe + ingredient data (planned)
 6. **Claude AI fallback** — last resort when no DB match (exists today)
 
@@ -54,6 +54,8 @@ Planned providers (in priority order):
 
 ## Provider stub files
 
-See `src/services/providers/` for interface definitions and stub implementations.
+- `src/services/providers/types.ts` — `FoodItem` type and `FoodProvider` interface
+- `src/services/providers/NutritionixProvider.ts` — stub class implementing `FoodProvider`
+
 Each provider file exports a class implementing the relevant interface so the
 router layer stays decoupled from data source details.

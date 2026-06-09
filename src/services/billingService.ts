@@ -1,8 +1,7 @@
 /**
  * Billing service stub.
  * PROTOTYPE — no payment provider wired yet.
- * In production, integrate react-native-purchases (RevenueCat) or
- * expo-in-app-purchases here.
+ * In production, integrate react-native-purchases (RevenueCat) here.
  */
 
 export type Plan = {
@@ -19,17 +18,18 @@ export type SubscriptionStatus = {
   expiresAt: string | null;
 };
 
+// Price and feature list are placeholders — final pricing TBD before launch.
 const PLANS: Plan[] = [
   {
     id: 'dininglens_pro_monthly',
     name: 'DiningLens Pro',
-    priceMonthly: 4.99,
+    priceMonthly: 0, // placeholder — final price TBD
     currency: 'USD',
     features: [
-      'Unlimited AI meal analysis',
-      'Unlimited AI coach messages',
+      'Full AI meal analysis',
+      'Daily AI coach messages',
       'Advanced macro tracking',
-      'Restaurant menu scraping',
+      'Restaurant menu scanning',
     ],
   },
 ];

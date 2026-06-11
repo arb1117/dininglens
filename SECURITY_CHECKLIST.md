@@ -6,6 +6,44 @@ production, not just in local dev.
 
 ---
 
+## Route entitlement perimeter
+
+Verified against `server/index.js` on 2026-06-10 (commit df3af77) and exercised
+by `scripts/smoke-backend.ps1`. The identity middleware runs globally, so every
+route sees `req.actor`; `requireActiveEntitlement` returns **401** for anonymous
+actors (missing/malformed `X-DiningLens-Install-Id`) and **403** for expired
+trials.
+
+| Route | Public? | Middleware | Cost-bearing? | Without install ID |
+|---|---|---|---|---|
+| `GET /health` | Yes | none | No | 200 |
+| `GET /entitlements/me` | Identity-only | inline anonymous check | No | 401 |
+| `POST /analyze` | No | largeJsonBody, aiLimiter, requireActiveEntitlement | Yes (Claude vision) | 401 |
+| `POST /reanalyze` | No | largeJsonBody, aiLimiter, requireActiveEntitlement | Yes (Claude vision) | 401 |
+| `POST /lookup-nutrition` | No | smallJsonBody, lookupLimiter, requireActiveEntitlement | Yes (USDA + Claude fallback) | 401 |
+| `POST /lookup` | No | smallJsonBody, aiLimiter, requireActiveEntitlement | Yes (Claude) | 401 |
+| `GET /search` | No | aiLimiter, requireActiveEntitlement | Yes (USDA + Claude fallback) | 401 |
+| `POST /detect-restaurant` | No | smallJsonBody, detectRestaurantLimiter, requireActiveEntitlement | Yes (Google Places ×2) | 401 |
+| `POST /scrape-menu` | No | smallJsonBody, scrapeLimiter, requireActiveEntitlement + `SCRAPE_MENU_ENABLED` flag + per-actor scrape quota + cache | Yes (fetch + Claude) | 401 |
+| `GET /barcode` | No | barcodeLimiter, requireActiveEntitlement | Yes (Open Food Facts) | 401 |
+| `POST /estimate-exercise` | No | smallJsonBody, aiLimiter, requireActiveEntitlement | Yes (Claude) | 401 |
+| `POST /chat` | No | smallJsonBody, aiLimiter, requireActiveEntitlement, requireCoachQuota | Yes (Claude) | 401 |
+| `POST /calculate-tdee` | No | smallJsonBody, aiLimiter, requireActiveEntitlement | Yes (Claude; deprecated, see KI-013) | 401 |
+| `POST /interpret-quantity` | No | smallJsonBody, aiLimiter, requireActiveEntitlement | Yes (Claude) | 401 |
+
+Invariants to preserve:
+
+- Only `/health` is freely public.
+- `/entitlements/me` requires a stable install ID but **not** an active
+  entitlement — an expired user must still be able to learn they are expired.
+- Every cost-bearing route requires an active entitlement.
+- `/chat` additionally consumes the daily coach quota (pre-decremented).
+- `/scrape-menu` additionally honors the `SCRAPE_MENU_ENABLED` kill switch,
+  the per-actor scrape quota, and the in-memory scrape cache.
+- Re-verify this table with `npm run smoke:backend` after any route change.
+
+---
+
 ## What is done
 
 ### Input validation

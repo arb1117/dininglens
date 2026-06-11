@@ -181,6 +181,25 @@ once a web client exists.
 
 ---
 
+### KI-018 — 11 moderate npm audit advisories via Expo tooling
+
+`npm run audit:prod` reports 11 moderate advisories, all reached through the
+pinned Expo SDK 54 toolchain: `postcss <8.5.10` (XSS in stringify output) and
+`uuid <11.1.1` (buffer bounds check) via `@expo/cli`, `@expo/config-plugins`,
+and `xcode`. These are build-time tooling paths, not code that runs on the
+server or device at runtime.
+
+**Impact:** low — neither package processes untrusted input in our build.
+
+**Fix:** resolved by the next deliberate Expo SDK upgrade. Do **not** run
+`npm audit fix --force` (it installs expo@56, a breaking change — see
+CLAUDE.md). Re-check after any dependency change; escalate if a high/critical
+advisory appears.
+
+*Last verified: 2026-06-10.*
+
+---
+
 ## Low priority / cosmetic
 
 ### KI-015 — `FAKE_MENU` fallback shown without explanation

@@ -7,6 +7,18 @@ Work through these in order; items marked with ⚠️ block subsequent steps.
 
 ## Phase 1 — Backend (Render)
 
+### 1.0 Create the Render service ⚠️
+
+As of 2026-06-10, https://dininglens-api.onrender.com returns
+`x-render-routing: no-server` — the service does not exist yet (or was
+deleted/suspended). Create it before anything else in this phase:
+
+- [ ] Render dashboard → New → Blueprint → connect the repo (uses `render.yaml`)
+- [ ] Confirm the service name is `dininglens-api` so the URL matches
+      `https://dininglens-api.onrender.com` (the URL hardcoded in `eas.json`)
+- [ ] If the name is taken, pick a new one and update `EXPO_PUBLIC_PROXY_URL`
+      in `eas.json` and `.env.example` to match
+
 ### 1.1 Add a payment card to Render ⚠️
 
 The Render Starter plan free tier spins down after inactivity (5–30 s cold starts).
@@ -47,7 +59,16 @@ variables are set.
 
 ### 1.5 Smoke test backend routes
 
-Use `curl` or an HTTP client:
+Run the automated entitlement smoke test first (verifies /health is public and
+gated routes return 401 without an install ID, without spending AI calls):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/smoke-backend.ps1 -BaseUrl https://dininglens-api.onrender.com
+```
+
+- [ ] All 6 checks pass
+
+Then spot-check real lookups with `curl` or an HTTP client:
 
 ```bash
 # Identity check (should return 401 — no install ID)

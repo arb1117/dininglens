@@ -37,7 +37,25 @@ RATE_LIMIT_AI=40
 RATE_LIMIT_SCRAPE=12
 ```
 
+Optional entitlement/scrape tuning (server defaults shown; only set these to
+override):
+
+```text
+TRIAL_DAYS=14
+TRIAL_COACH_DAILY_LIMIT=3
+PAID_COACH_DAILY_LIMIT=20
+TRIAL_SCRAPE_DAILY_LIMIT=5
+PAID_SCRAPE_DAILY_LIMIT=30
+SCRAPE_MENU_ENABLED=true
+SCRAPE_CACHE_TTL_HOURS=12
+```
+
 Keep `CORS_ORIGINS` empty while this is mobile-only unless a web client is deployed. If a web client is deployed, set it to a comma-separated allowlist of exact origins.
+
+**CORS and native mobile:** the iOS app does not send an `Origin` header, so
+CORS never blocks it — CORS only constrains browsers. An empty `CORS_ORIGINS`
+(allow all) is acceptable for the mobile-only beta; real protection for the
+API comes from the install-ID + entitlement perimeter, not CORS.
 
 Health check:
 

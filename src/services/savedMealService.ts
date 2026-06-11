@@ -2,9 +2,14 @@ import type { LoggedMeal, MealPeriod } from '../context/MealContext';
 import type { StoredSavedMeal, StoredMealItem } from '../storage/schema';
 import { STORAGE_KEYS } from '../storage/storageKeys';
 import { getEnvelope, setEnvelope } from '../storage/storageClient';
+const MAX_SAVED_MEALS = 200;
 
 function uid(): string {
   return `sm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function sortDate(meal: Pick<StoredSavedMeal, 'lastUsedAt' | 'updatedAt'>): string {
+  return meal.lastUsedAt || meal.updatedAt || '';
 }
 
 async function loadAll(): Promise<StoredSavedMeal[]> {
@@ -13,14 +18,16 @@ async function loadAll(): Promise<StoredSavedMeal[]> {
 }
 
 async function saveAll(meals: StoredSavedMeal[]): Promise<void> {
-  await setEnvelope(STORAGE_KEYS.SAVED_MEALS, meals);
+  await setEnvelope(STORAGE_KEYS.SAVED_MEALS, meals.slice(0, MAX_SAVED_MEALS));
 }
 
 export async function listSavedMeals(): Promise<StoredSavedMeal[]> {
   const meals = await loadAll();
-  return meals.sort((a, b) => {
-    if (b.useCount !== a.useCount) return b.useCount - a.useCount;
-    return (b.lastUsedAt ?? b.updatedAt).localeCompare(a.lastUsedAt ?? a.updatedAt);
+  return meals.filter(m => typeof m.name === 'string' && Array.isArray(m.items)).sort((a, b) => {
+    const bUses = Number.isFinite(b.useCount) ? b.useCount : 0;
+    const aUses = Number.isFinite(a.useCount) ? a.useCount : 0;
+    if (bUses !== aUses) return bUses - aUses;
+    return sortDate(b).localeCompare(sortDate(a));
   });
 }
 
@@ -50,6 +57,8 @@ export async function saveMealFromLoggedMeal(
     totals: meal.totals,
     defaultPeriod: meal.period,
     sourceMealId: meal.id,
+    venueId: meal.venueId,
+    venueName: meal.venueName,
     createdAt: now,
     updatedAt: now,
     useCount: 0,
@@ -133,6 +142,9 @@ export async function logSavedMeal(
     period: mealPeriod,
     items: saved.items,
     totals: saved.totals,
+    venueId: saved.venueId,
+    venueName: saved.venueName,
+    source: 'saved',
   });
   await recordSavedMealUse(id);
 }

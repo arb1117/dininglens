@@ -545,6 +545,14 @@ export default function EstimateScreen({ navigation, route }: Props) {
         }).catch(() => {});
       });
     }
+    mealItems.forEach(item => {
+      recordCorrection(item.name, item.name, {
+        calories: item.cal,
+        protein: item.protein,
+        carbs: item.carbs,
+        fat: item.fat,
+      }).catch(() => {});
+    });
     setSaveOfferItems(mealItems.map(item => ({
       name: item.name,
       portion: item.portion,
@@ -933,7 +941,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
                 saveMealFromItems(
                   itemsToSave,
                   itemsToSave.slice(0, 3).map(i => i.name).join(', '),
-                  { defaultPeriod: pickedPeriod }
+                  { defaultPeriod: pickedPeriod, venueId: venue?.id, venueName: venue?.name }
                 ).catch(() => {});
                 navigation.navigate('MainTabs', { screen: 'Dashboard' });
               }}

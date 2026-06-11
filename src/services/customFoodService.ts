@@ -3,6 +3,7 @@ import { STORAGE_KEYS } from '../storage/storageKeys';
 import { getEnvelope, setEnvelope } from '../storage/storageClient';
 
 type CustomFoodInput = Omit<StoredCustomFood, 'id' | 'createdAt' | 'updatedAt' | 'useCount'>;
+const MAX_CUSTOM_FOODS = 500;
 
 function normalize(s: string): string {
   return s.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -12,20 +13,26 @@ function uid(): string {
   return `cf_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function sortDate(food: Pick<StoredCustomFood, 'lastUsedAt' | 'updatedAt'>): string {
+  return food.lastUsedAt || food.updatedAt || '';
+}
+
 async function loadAll(): Promise<StoredCustomFood[]> {
   const env = await getEnvelope<StoredCustomFood[]>(STORAGE_KEYS.CUSTOM_FOODS, []);
   return Array.isArray(env.data) ? env.data : [];
 }
 
 async function saveAll(foods: StoredCustomFood[]): Promise<void> {
-  await setEnvelope(STORAGE_KEYS.CUSTOM_FOODS, foods);
+  await setEnvelope(STORAGE_KEYS.CUSTOM_FOODS, foods.slice(0, MAX_CUSTOM_FOODS));
 }
 
 export async function listCustomFoods(): Promise<StoredCustomFood[]> {
   const foods = await loadAll();
-  return foods.sort((a, b) => {
-    if (b.useCount !== a.useCount) return b.useCount - a.useCount;
-    return (b.lastUsedAt ?? b.updatedAt).localeCompare(a.lastUsedAt ?? a.updatedAt);
+  return foods.filter(f => typeof f.name === 'string' && typeof f.calories === 'number').sort((a, b) => {
+    const bUses = Number.isFinite(b.useCount) ? b.useCount : 0;
+    const aUses = Number.isFinite(a.useCount) ? a.useCount : 0;
+    if (bUses !== aUses) return bUses - aUses;
+    return sortDate(b).localeCompare(sortDate(a));
   });
 }
 
@@ -63,12 +70,12 @@ export async function deleteCustomFood(id: string): Promise<void> {
 export async function findCustomFoods(query: string): Promise<StoredCustomFood[]> {
   const foods = await loadAll();
   if (!query.trim()) {
-    return foods.sort((a, b) => b.useCount - a.useCount);
+    return listCustomFoods();
   }
   const q = normalize(query);
   return foods
     .filter(f => normalize(f.name).includes(q) || (f.brand && normalize(f.brand).includes(q)))
-    .sort((a, b) => b.useCount - a.useCount);
+    .sort((a, b) => (b.useCount || 0) - (a.useCount || 0));
 }
 
 export async function recordCustomFoodUse(id: string): Promise<void> {

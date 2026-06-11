@@ -1,9 +1,14 @@
 import type { StoredCorrectionMemoryEntry } from '../storage/schema';
 import { STORAGE_KEYS } from '../storage/storageKeys';
 import { getEnvelope, setEnvelope } from '../storage/storageClient';
+const MAX_CORRECTION_MEMORY = 500;
 
 function uid(): string {
   return `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function sortDate(entry: Pick<StoredCorrectionMemoryEntry, 'lastUsedAt' | 'updatedAt'>): string {
+  return entry.lastUsedAt || entry.updatedAt || '';
 }
 
 async function loadAll(): Promise<StoredCorrectionMemoryEntry[]> {
@@ -12,12 +17,21 @@ async function loadAll(): Promise<StoredCorrectionMemoryEntry[]> {
 }
 
 async function saveAll(entries: StoredCorrectionMemoryEntry[]): Promise<void> {
-  await setEnvelope(STORAGE_KEYS.CORRECTION_MEMORY, entries);
+  const capped = entries
+    .filter(e => typeof e.canonicalName === 'string')
+    .sort((a, b) => {
+      const bSeen = Number.isFinite(b.timesSeen) ? b.timesSeen : 0;
+      const aSeen = Number.isFinite(a.timesSeen) ? a.timesSeen : 0;
+      if (bSeen !== aSeen) return bSeen - aSeen;
+      return sortDate(b).localeCompare(sortDate(a));
+    })
+    .slice(0, MAX_CORRECTION_MEMORY);
+  await setEnvelope(STORAGE_KEYS.CORRECTION_MEMORY, capped);
 }
 
 export async function listCorrectionMemory(): Promise<StoredCorrectionMemoryEntry[]> {
   const entries = await loadAll();
-  return entries.sort((a, b) => b.timesSeen - a.timesSeen);
+  return entries.sort((a, b) => (b.timesSeen || 0) - (a.timesSeen || 0));
 }
 
 export async function recordCorrection(
@@ -36,7 +50,7 @@ export async function recordCorrection(
     existing.protein = macros.protein;
     existing.carbs = macros.carbs;
     existing.fat = macros.fat;
-    existing.timesSeen += 1;
+    existing.timesSeen = (existing.timesSeen || 0) + 1;
     existing.lastUsedAt = now;
     existing.updatedAt = now;
     await saveAll(entries);

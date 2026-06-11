@@ -8,6 +8,8 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 
 import { MealProvider } from './src/context/MealContext';
+import { migrateStorageIfNeeded } from './src/storage/migrations';
+import { STORAGE_KEYS } from './src/storage/storageKeys';
 import MainTabNavigator from './src/navigation/MainTabNavigator';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import PermissionsScreen from './src/screens/PermissionsScreen';
@@ -62,13 +64,15 @@ export default function App() {
     useState<keyof RootStackParamList | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      AsyncStorage.getItem('@dininglens_permissions_done'),
-      AsyncStorage.getItem('@dininglens_goals'),
-    ])
-      .then(([permDone, goals]) => {
+    migrateStorageIfNeeded()
+      .then(() => Promise.all([
+        AsyncStorage.getItem('@dininglens_permissions_done'),
+        AsyncStorage.getItem(STORAGE_KEYS.GOALS),
+        AsyncStorage.getItem('@dininglens_goals'),
+      ]))
+      .then(([permDone, goals, legacyGoals]) => {
         if (!permDone) return setInitialRoute('Permissions');
-        setInitialRoute(goals ? 'MainTabs' : 'Goals');
+        setInitialRoute((goals || legacyGoals) ? 'MainTabs' : 'Goals');
       })
       .catch(() => setInitialRoute('Permissions'));
   }, []);

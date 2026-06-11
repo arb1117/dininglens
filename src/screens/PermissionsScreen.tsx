@@ -11,6 +11,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Location from 'expo-location';
 import { Camera } from 'expo-camera';
 import { RootStackParamList } from '../../App';
+import { STORAGE_KEYS } from '../storage/storageKeys';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'Permissions'> };
 
@@ -36,8 +37,11 @@ export default function PermissionsScreen({ navigation }: Props) {
 
   async function handleContinue() {
     await AsyncStorage.setItem('@dininglens_permissions_done', 'true');
-    const hasGoals = await AsyncStorage.getItem('@dininglens_goals');
-    navigation.reset({ index: 0, routes: [{ name: hasGoals ? 'MainTabs' : 'Goals' }] });
+    const [goals, legacyGoals] = await Promise.all([
+      AsyncStorage.getItem(STORAGE_KEYS.GOALS),
+      AsyncStorage.getItem('@dininglens_goals'),
+    ]);
+    navigation.reset({ index: 0, routes: [{ name: goals || legacyGoals ? 'MainTabs' : 'Goals' }] });
   }
 
   return (

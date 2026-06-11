@@ -32,11 +32,22 @@ export function tokenSimilarity(a: string, b: string): number {
 export function findBestMenuMatch(
   name: string,
   menuItems: MenuItem[],
-  threshold = 0.4
+  threshold = 0.55
 ): { item: MenuItem; score: number } | null {
+  const normalizedName = normalizeMenuName(name);
+  const detectedTokenCount = tokenize(name).size;
   let best: { item: MenuItem; score: number } | null = null;
   for (const item of menuItems) {
-    const score = tokenSimilarity(name, item.name);
+    const normalizedItem = normalizeMenuName(item.name);
+    const menuTokenCount = tokenize(item.name).size;
+    const canUseContainment = detectedTokenCount >= 2 && menuTokenCount >= 2;
+    const exactOrContained =
+      normalizedName === normalizedItem ||
+      (canUseContainment && (
+        normalizedItem.includes(normalizedName) ||
+        normalizedName.includes(normalizedItem)
+      ));
+    const score = exactOrContained ? 1 : tokenSimilarity(name, item.name);
     if (score >= threshold && (!best || score > best.score)) {
       best = { item, score };
     }
@@ -47,12 +58,10 @@ export function findBestMenuMatch(
 export function applyMenuMatches(
   detectedItems: DetectedItem[],
   menuItems: MenuItem[],
-  threshold = 0.4
+  threshold = 0.55
 ): DetectedItem[] {
   if (menuItems.length === 0) return detectedItems;
   return detectedItems.map(detected => {
-    // Skip items that already have full macro data from the AI
-    if (detected.calories !== undefined && detected.calories > 0) return detected;
     const match = findBestMenuMatch(detected.name, menuItems, threshold);
     if (!match) return detected;
     const scale = detected.estimatedQuantityGrams != null

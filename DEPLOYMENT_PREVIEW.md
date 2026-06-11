@@ -89,7 +89,7 @@ EXPO_PUBLIC_PROXY_URL=https://your-hosted-dininglens-api.example.com
 
 Only `EXPO_PUBLIC_PROXY_URL` belongs in the app bundle. AI, USDA, and Google keys stay on the backend.
 
-This repo now includes `eas.json` with `development`, `preview`, and `production` profiles. Replace the placeholder `EXPO_PUBLIC_PROXY_URL` in `eas.json` or set it through EAS environment management before building. The app intentionally throws if the placeholder URL is left in place.
+This repo now includes `eas.json` with `development`, `preview`, and `production` profiles. All three profiles set `EXPO_PUBLIC_PROXY_URL=https://dininglens-api.onrender.com`. If the variable is unset, `src/config/api.ts` falls back to the same Render URL (with a console warning in dev mode reminding you to point at a local server).
 
 Useful commands:
 

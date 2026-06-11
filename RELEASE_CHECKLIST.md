@@ -144,7 +144,22 @@ This sets `extra.eas.projectId` in `app.json` if not already present.
 
 - [ ] `app.json` has `extra.eas.projectId` or `owner` field set
 
-### 3.3 Build the iOS production binary
+### 3.3 Build an iOS preview binary first (recommended)
+
+A preview build installs via internal distribution (no App Store review) and
+catches native build errors before burning a production build number:
+
+```bash
+eas build --platform ios --profile preview
+```
+
+- [ ] Build completes on EAS servers
+- [ ] Install on a registered device via the QR code / link from the EAS dashboard
+      (requires the device's UDID registered: `eas device:create`)
+- [ ] App opens, points at https://dininglens-api.onrender.com (check the
+      Profile → version 5-tap Debug screen → Backend URL)
+
+### 3.4 Build the iOS production binary
 
 ```bash
 eas build --platform ios --profile production
@@ -156,7 +171,7 @@ eas build --platform ios --profile production
 The production build profile uses `autoIncrement: true` so build numbers are
 bumped automatically.
 
-### 3.4 Verify bundle identifier
+### 3.5 Verify bundle identifier
 
 `app.json` uses `com.dininglens.app`. Confirm this matches what is registered
 in App Store Connect.

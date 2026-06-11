@@ -4,6 +4,7 @@ import { Venue } from '../services/venueService';
 import { STORAGE_KEYS, toDateKey } from '../storage/storageKeys';
 import { getJSON, setJSON, removeKey } from '../storage/storageClient';
 import { migrateStorageIfNeeded } from '../storage/migrations';
+import { sanitizeArray, sanitizeMeal, sanitizeGoals, sanitizeExerciseEntry } from '../storage/storageValidation';
 
 export type UserGoals = {
   preset: 'lose' | 'maintain' | 'build' | 'recomposition';
@@ -140,10 +141,11 @@ export function MealProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function init() {
       await migrateStorageIfNeeded();
-      const meals = await getJSON<LoggedMeal[]>(STORAGE_KEYS.MEAL_LOG, [], v => Array.isArray(v));
-      setMealLog(Array.isArray(meals) ? meals : []);
-      const g = await getJSON<UserGoals | null>(STORAGE_KEYS.GOALS, null);
-      if (g && typeof g === 'object' && 'calories' in g) setGoalsState(g);
+      const meals = await getJSON<unknown>(STORAGE_KEYS.MEAL_LOG, [], v => Array.isArray(v));
+      setMealLog(sanitizeArray(meals, sanitizeMeal));
+      const g = await getJSON<unknown>(STORAGE_KEYS.GOALS, null);
+      const cleanGoals = sanitizeGoals(g);
+      if (cleanGoals) setGoalsState(cleanGoals);
     }
     init().catch(() => {});
   }, []);
@@ -152,8 +154,8 @@ export function MealProvider({ children }: { children: ReactNode }) {
     getJSON<number>(waterKey, 0, v => typeof v === 'number')
       .then(n => setWaterCups(typeof n === 'number' && n >= 0 ? Math.min(n, 20) : 0))
       .catch(() => {});
-    getJSON<ExerciseEntry[]>(exerciseKey, [], v => Array.isArray(v))
-      .then(entries => setExerciseLog(Array.isArray(entries) ? entries : []))
+    getJSON<unknown>(exerciseKey, [], v => Array.isArray(v))
+      .then(entries => setExerciseLog(sanitizeArray(entries, sanitizeExerciseEntry)))
       .catch(() => {});
   }, [waterKey, exerciseKey]);
 

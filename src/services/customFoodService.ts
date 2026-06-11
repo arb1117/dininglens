@@ -1,6 +1,7 @@
 import { StoredCustomFood } from '../storage/schema';
 import { STORAGE_KEYS } from '../storage/storageKeys';
 import { getEnvelope, setEnvelope } from '../storage/storageClient';
+import { sanitizeArray, sanitizeCustomFood } from '../storage/storageValidation';
 
 type CustomFoodInput = Omit<StoredCustomFood, 'id' | 'createdAt' | 'updatedAt' | 'useCount'>;
 const MAX_CUSTOM_FOODS = 500;
@@ -19,7 +20,7 @@ function sortDate(food: Pick<StoredCustomFood, 'lastUsedAt' | 'updatedAt'>): str
 
 async function loadAll(): Promise<StoredCustomFood[]> {
   const env = await getEnvelope<StoredCustomFood[]>(STORAGE_KEYS.CUSTOM_FOODS, []);
-  return Array.isArray(env.data) ? env.data : [];
+  return sanitizeArray(env.data, sanitizeCustomFood);
 }
 
 async function saveAll(foods: StoredCustomFood[]): Promise<void> {

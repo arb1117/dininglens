@@ -1,6 +1,7 @@
 import type { StoredCorrectionMemoryEntry } from '../storage/schema';
 import { STORAGE_KEYS } from '../storage/storageKeys';
 import { getEnvelope, setEnvelope } from '../storage/storageClient';
+import { sanitizeArray, sanitizeCorrectionMemoryEntry } from '../storage/storageValidation';
 const MAX_CORRECTION_MEMORY = 500;
 
 function uid(): string {
@@ -13,7 +14,7 @@ function sortDate(entry: Pick<StoredCorrectionMemoryEntry, 'lastUsedAt' | 'updat
 
 async function loadAll(): Promise<StoredCorrectionMemoryEntry[]> {
   const env = await getEnvelope<StoredCorrectionMemoryEntry[]>(STORAGE_KEYS.CORRECTION_MEMORY, []);
-  return Array.isArray(env.data) ? env.data : [];
+  return sanitizeArray(env.data, sanitizeCorrectionMemoryEntry);
 }
 
 async function saveAll(entries: StoredCorrectionMemoryEntry[]): Promise<void> {

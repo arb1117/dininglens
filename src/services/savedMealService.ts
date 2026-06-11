@@ -2,6 +2,7 @@ import type { LoggedMeal, MealPeriod } from '../context/MealContext';
 import type { StoredSavedMeal, StoredMealItem } from '../storage/schema';
 import { STORAGE_KEYS } from '../storage/storageKeys';
 import { getEnvelope, setEnvelope } from '../storage/storageClient';
+import { sanitizeArray, sanitizeSavedMeal } from '../storage/storageValidation';
 const MAX_SAVED_MEALS = 200;
 
 function uid(): string {
@@ -14,7 +15,7 @@ function sortDate(meal: Pick<StoredSavedMeal, 'lastUsedAt' | 'updatedAt'>): stri
 
 async function loadAll(): Promise<StoredSavedMeal[]> {
   const env = await getEnvelope<StoredSavedMeal[]>(STORAGE_KEYS.SAVED_MEALS, []);
-  return Array.isArray(env.data) ? env.data : [];
+  return sanitizeArray(env.data, sanitizeSavedMeal);
 }
 
 async function saveAll(meals: StoredSavedMeal[]): Promise<void> {

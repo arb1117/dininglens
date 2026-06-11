@@ -1,6 +1,7 @@
 import type { StoredVenueMemoryEntry } from '../storage/schema';
 import { STORAGE_KEYS } from '../storage/storageKeys';
 import { getEnvelope, setEnvelope } from '../storage/storageClient';
+import { sanitizeArray, sanitizeVenueMemoryEntry } from '../storage/storageValidation';
 const MAX_VENUE_MEMORY = 1000;
 
 function uid(): string {
@@ -17,7 +18,7 @@ function sortDate(entry: Pick<StoredVenueMemoryEntry, 'lastUsedAt' | 'updatedAt'
 
 async function loadAll(): Promise<StoredVenueMemoryEntry[]> {
   const env = await getEnvelope<StoredVenueMemoryEntry[]>(STORAGE_KEYS.VENUE_MEMORY, []);
-  return Array.isArray(env.data) ? env.data : [];
+  return sanitizeArray(env.data, sanitizeVenueMemoryEntry);
 }
 
 async function saveAll(entries: StoredVenueMemoryEntry[]): Promise<void> {

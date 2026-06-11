@@ -1,6 +1,7 @@
 import type { StoredWeightEntry } from '../storage/schema';
 import { STORAGE_KEYS, toDateKey } from '../storage/storageKeys';
 import { getEnvelope, setEnvelope } from '../storage/storageClient';
+import { sanitizeArray, sanitizeWeightEntry } from '../storage/storageValidation';
 
 function uid(): string {
   return `w_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -8,7 +9,7 @@ function uid(): string {
 
 async function loadAll(): Promise<StoredWeightEntry[]> {
   const env = await getEnvelope<StoredWeightEntry[]>(STORAGE_KEYS.WEIGHT_LOG, []);
-  return Array.isArray(env.data) ? env.data : [];
+  return sanitizeArray(env.data, sanitizeWeightEntry);
 }
 
 async function saveAll(entries: StoredWeightEntry[]): Promise<void> {

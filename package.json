@@ -37,7 +37,8 @@
     "web": "expo start --web",
     "server": "node server/index.js",
     "check": "npx tsc --noEmit && node --check server/index.js",
-    "audit:prod": "npm audit --omit=dev"
+    "audit:prod": "npm audit --omit=dev",
+    "smoke:backend": "powershell -ExecutionPolicy Bypass -File scripts/smoke-backend.ps1"
   },
   "private": true
 }

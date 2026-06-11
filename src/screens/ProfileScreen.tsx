@@ -1,6 +1,6 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, TextInput, Platform, KeyboardAvoidingView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
@@ -42,8 +42,12 @@ export default function ProfileScreen() {
     getTrend().then(setWeightTrend).catch(() => {});
   }, []);
 
-  useEffect(() => { refreshCustomFoods(); }, [refreshCustomFoods]);
-  useEffect(() => { refreshWeight(); }, [refreshWeight]);
+  // Tab screens stay mounted, so reload on every focus — custom foods created in
+  // SearchScreen and weights logged elsewhere must appear without an app restart.
+  useFocusEffect(useCallback(() => {
+    refreshCustomFoods();
+    refreshWeight();
+  }, [refreshCustomFoods, refreshWeight]));
 
   function handleLogWeight() {
     const w = parseFloat(weightInput);

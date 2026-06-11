@@ -1,10 +1,10 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   ScrollView, View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, Modal, TextInput, ActivityIndicator,
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext, periodFromTimestamp } from '../context/MealContext';
 import type { ExerciseEntry, MacroItem, MealPeriod } from '../context/MealContext';
@@ -393,11 +393,13 @@ export default function DashboardScreen() {
   const [latestWeight, setLatestWeight] = useState<StoredWeightEntry | null>(null);
   const [weightTrend, setWeightTrend] = useState<WeightTrend | null>(null);
 
-  useEffect(() => {
+  // Tab screens stay mounted, so reload on every focus — otherwise meals saved
+  // from EstimateScreen/History and weights logged in Profile never show up here.
+  useFocusEffect(useCallback(() => {
     listSavedMeals().then(meals => setSavedMeals(meals.slice(0, 8))).catch(() => {});
     getLatestWeight().then(setLatestWeight).catch(() => {});
     getTrend().then(setWeightTrend).catch(() => {});
-  }, []);
+  }, []));
 
   function handleLogSavedMeal(id: string) {
     logSavedMeal(id, addMeal)
@@ -425,7 +427,7 @@ export default function DashboardScreen() {
         {/* Header */}
         <View style={s.header}>
           <View>
-            <Text style={s.greeting}>{getGreeting()}, Andrew</Text>
+            <Text style={s.greeting}>{getGreeting()}</Text>
             <Text style={s.dateLabel}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</Text>
           </View>
           {streak >= 2 && (

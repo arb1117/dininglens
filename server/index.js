@@ -3,7 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const dns = require('dns').promises;
 const net = require('net');
 const identityMiddleware          = require('./middleware/identity');
@@ -42,11 +42,20 @@ app.use((req, res, next) => {
 });
 app.use(identityMiddleware);
 
+// Campus Wi-Fi puts a whole dorm behind one IP, so per-feature limits key on the
+// install ID. Install IDs are self-asserted, so the global limiter stays IP-keyed
+// (with a ceiling high enough for a shared NAT) as the backstop against ID rotation.
+function actorKey(req) {
+  if (req.actor?.type === 'install') return `install:${req.actor.id}`;
+  return `ip:${ipKeyGenerator(req.ip ?? '')}`;
+}
+
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: Number(process.env.RATE_LIMIT_GLOBAL || 300),
+  limit: Number(process.env.RATE_LIMIT_GLOBAL || 2000),
   standardHeaders: true,
   legacyHeaders: false,
+  skip: req => req.path === '/health',
   message: { error: 'Too many requests. Please try again later.' },
 });
 
@@ -55,7 +64,19 @@ const aiLimiter = rateLimit({
   limit: Number(process.env.RATE_LIMIT_AI || 40),
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: actorKey,
   message: { error: 'Too many AI requests. Please try again later.' },
+});
+
+// Search fires on debounced keystrokes, so it gets its own bucket instead of
+// draining the photo-analysis allowance.
+const searchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_SEARCH || 150),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: actorKey,
+  message: { error: 'Too many searches. Please try again later.' },
 });
 
 const scrapeLimiter = rateLimit({
@@ -63,6 +84,7 @@ const scrapeLimiter = rateLimit({
   limit: Number(process.env.RATE_LIMIT_SCRAPE || 12),
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: actorKey,
   message: { error: 'Too many menu scraping requests. Please try again later.' },
 });
 
@@ -72,6 +94,7 @@ const detectRestaurantLimiter = rateLimit({
   limit: Number(process.env.RATE_LIMIT_DETECT_RESTAURANT || 20),
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: actorKey,
   message: { error: 'Too many location requests. Please try again later.' },
 });
 
@@ -81,6 +104,7 @@ const lookupLimiter = rateLimit({
   limit: Number(process.env.RATE_LIMIT_LOOKUP || 60),
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: actorKey,
   message: { error: 'Too many lookup requests. Please try again later.' },
 });
 
@@ -90,6 +114,7 @@ const barcodeLimiter = rateLimit({
   limit: Number(process.env.RATE_LIMIT_BARCODE || 60),
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: actorKey,
   message: { error: 'Too many barcode requests. Please try again later.' },
 });
 
@@ -97,6 +122,16 @@ app.use(globalLimiter);
 
 function logDebug(...args) {
   if (!IS_PROD) console.log(...args);
+}
+
+const ANTHROPIC_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function imageTooLarge(imageBase64) {
+  return Math.floor(imageBase64.length * 3 / 4) > ANTHROPIC_MAX_IMAGE_BYTES;
+}
+
+function sendImageTooLarge(res) {
+  return res.status(413).json({ error: 'image_too_large', message: 'Image is too large to analyze. Try a smaller photo.' });
 }
 
 function sendServerError(res, publicMessage = 'Something went wrong') {
@@ -282,19 +317,24 @@ async function searchOpenFoodFacts(query) {
 async function searchUSDA(query) {
   const key = process.env.USDA_API_KEY || 'DEMO_KEY';
   const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${key}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
   const data = await res.json();
   return (data.foods || []).slice(0, 5).map(f => {
+    // FoodData Central search returns nutrient values per 100g (or 100ml).
     const get = name => f.foodNutrients?.find(n => n.nutrientName === name)?.value || 0;
+    const unit = String(f.servingSizeUnit ?? '').toLowerCase();
+    const isMetric = ['g', 'grm', 'ml', 'mlt'].includes(unit);
+    const servingAmount = Number(f.servingSize);
+    const hasServing = isMetric && Number.isFinite(servingAmount) && servingAmount > 0;
+    const scale = hasServing ? servingAmount / 100 : 1;
+    const unitLabel = unit.startsWith('m') ? 'ml' : 'g';
     return {
       name: f.description,
-      serving_size: f.servingSize && f.servingSizeUnit
-        ? `${f.servingSize}${f.servingSizeUnit}`
-        : '100g',
-      calories: Math.round(get('Energy')),
-      protein: Math.round(get('Protein') * 10) / 10,
-      carbs: Math.round(get('Carbohydrate, by difference') * 10) / 10,
-      fat: Math.round(get('Total lipid (fat)') * 10) / 10,
+      serving_size: hasServing ? `${Math.round(servingAmount * 10) / 10}${unitLabel}` : '100g',
+      calories: Math.round(get('Energy') * scale),
+      protein: Math.round(get('Protein') * scale * 10) / 10,
+      carbs: Math.round(get('Carbohydrate, by difference') * scale * 10) / 10,
+      fat: Math.round(get('Total lipid (fat)') * scale * 10) / 10,
       source: 'usda',
     };
   });
@@ -302,11 +342,12 @@ async function searchUSDA(query) {
 
 // ─── /analyze ────────────────────────────────────────────────────────────────
 
-app.post('/analyze', largeJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
+app.post('/analyze', aiLimiter, requireActiveEntitlement, largeJsonBody, async (req, res) => {
   console.log('[/analyze] request received');
   const body = validate(analyzeSchema, req.body, res);
   if (!body) return;
   const { imageBase64, menuItems } = body;
+  if (imageTooLarge(imageBase64)) return sendImageTooLarge(res);
   logDebug(`[/analyze] imageBase64 length: ${imageBase64.length}, menuItems: ${menuItems?.length ?? 0}`);
   try {
     const result = await aiProvider.analyzeMealImage(imageBase64, menuItems);
@@ -321,11 +362,12 @@ app.post('/analyze', largeJsonBody, aiLimiter, requireActiveEntitlement, async (
 
 // ─── /reanalyze ──────────────────────────────────────────────────────────────
 
-app.post('/reanalyze', largeJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
+app.post('/reanalyze', aiLimiter, requireActiveEntitlement, largeJsonBody, async (req, res) => {
   console.log('[/reanalyze] request received');
   const body = validate(reanalyzeSchema, req.body, res);
   if (!body) return;
   const { imageBase64, feedback, previousItems, menuItems } = body;
+  if (imageTooLarge(imageBase64)) return sendImageTooLarge(res);
   logDebug(`[/reanalyze] imageBase64 length: ${imageBase64.length}, previousItems: ${previousItems?.length ?? 0}`);
   try {
     const result = await aiProvider.reanalyzeMeal(imageBase64, feedback, previousItems, menuItems);
@@ -341,7 +383,7 @@ app.post('/reanalyze', largeJsonBody, aiLimiter, requireActiveEntitlement, async
 // ─── /lookup-nutrition ────────────────────────────────────────────────────────
 // Single-item precise lookup via USDA FoodData Central
 
-app.post('/lookup-nutrition', smallJsonBody, lookupLimiter, requireActiveEntitlement, async (req, res) => {
+app.post('/lookup-nutrition', lookupLimiter, smallJsonBody, requireActiveEntitlement, async (req, res) => {
   console.log('[/lookup-nutrition] request received');
   const body = validate(lookupSchema, req.body, res);
   if (!body) return;
@@ -349,7 +391,7 @@ app.post('/lookup-nutrition', smallJsonBody, lookupLimiter, requireActiveEntitle
   try {
     const results = await searchUSDA(query);
     if (results.length > 0) return res.json(results[0]);
-    throw new Error('No USDA results for query');
+    return res.status(404).json({ error: 'not_found', message: 'No nutrition data found for that food.' });
   } catch (err) {
     console.error('[/lookup-nutrition] Error:', err.message, 'requestId=', req.requestId);
     sendServerError(res, 'Nutrition lookup failed');
@@ -379,7 +421,7 @@ function lookupCommonFood(query) {
 // ─── /lookup ─────────────────────────────────────────────────────────────────
 // "Add item manually" on EstimateScreen — tries OFF, falls back to Claude
 
-app.post('/lookup', smallJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
+app.post('/lookup', aiLimiter, smallJsonBody, requireActiveEntitlement, async (req, res) => {
   console.log('[/lookup] request received');
   const body = validate(lookupSchema, req.body, res);
   if (!body) return;
@@ -417,7 +459,7 @@ app.post('/lookup', smallJsonBody, aiLimiter, requireActiveEntitlement, async (r
 // ─── /search ─────────────────────────────────────────────────────────────────
 // Food search for SearchScreen — parallel OFF + USDA, dedup, Claude fallback
 
-app.get('/search', aiLimiter, requireActiveEntitlement, async (req, res) => {
+app.get('/search', searchLimiter, requireActiveEntitlement, async (req, res) => {
   console.log('[/search] request received');
   const params = validate(searchSchema, req.query, res);
   if (!params) return;
@@ -476,7 +518,7 @@ app.get('/search', aiLimiter, requireActiveEntitlement, async (req, res) => {
 // ─── /detect-restaurant ──────────────────────────────────────────────────────
 // Proxies Google Places Nearby Search + Details so the API key stays server-side
 
-app.post('/detect-restaurant', smallJsonBody, detectRestaurantLimiter, requireActiveEntitlement, async (req, res) => {
+app.post('/detect-restaurant', detectRestaurantLimiter, smallJsonBody, requireActiveEntitlement, async (req, res) => {
   console.log('[/detect-restaurant] request received');
   const body = validate(detectRestaurantSchema, req.body, res);
   if (!body) return;
@@ -504,8 +546,12 @@ app.post('/detect-restaurant', smallJsonBody, detectRestaurantLimiter, requireAc
     const detailsData = await detailsRes.json();
     const website = detailsData.result?.website ?? null;
 
+    const loc = place.geometry?.location;
+    const placeLat = typeof loc?.lat === 'number' ? loc.lat : null;
+    const placeLon = typeof loc?.lng === 'number' ? loc.lng : null;
+
     console.log(`[/detect-restaurant] Found: "${name}" placeId=${placeId} website=${website ?? 'none'}`);
-    return res.json({ placeId, name, website });
+    return res.json({ placeId, name, website, lat: placeLat, lon: placeLon });
   } catch (err) {
     console.error('[/detect-restaurant] Error:', err.message, 'requestId=', req.requestId);
     sendServerError(res, 'Restaurant detection failed');
@@ -533,7 +579,7 @@ function cacheScrapeEmptyResult(cacheKey) {
   scrapeCache.set(cacheKey, { items: [], cachedAt: Date.now() });
 }
 
-app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement, async (req, res) => {
+app.post('/scrape-menu', scrapeLimiter, smallJsonBody, requireActiveEntitlement, async (req, res) => {
   if (!SCRAPE_MENU_ENABLED) {
     return res.status(503).json({
       error: 'scrape_disabled',
@@ -545,8 +591,11 @@ app.post('/scrape-menu', smallJsonBody, scrapeLimiter, requireActiveEntitlement,
   if (!body) return;
   const { website, restaurantName, placeId } = body;
 
-  // Cache key: placeId takes priority; fall back to normalized URL
-  const cacheKey = placeId ?? normalizeScrapeKey(website);
+  // placeId and website are both client-supplied. Keying on placeId alone let any
+  // client attach an arbitrary site's menu to a real restaurant for every user.
+  const cacheKey = placeId
+    ? `${placeId}|${normalizeScrapeKey(website)}`
+    : normalizeScrapeKey(website);
 
   // Check cache before counting quota
   const cached = scrapeCache.get(cacheKey);
@@ -670,7 +719,7 @@ app.get('/barcode', barcodeLimiter, requireActiveEntitlement, async (req, res) =
 
 // ─── /estimate-exercise ──────────────────────────────────────────────────────
 
-app.post('/estimate-exercise', smallJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
+app.post('/estimate-exercise', aiLimiter, smallJsonBody, requireActiveEntitlement, async (req, res) => {
   const body = validate(exerciseSchema, req.body, res);
   if (!body) return;
   const { name, duration, type } = body;
@@ -686,7 +735,7 @@ app.post('/estimate-exercise', smallJsonBody, aiLimiter, requireActiveEntitlemen
 
 // ─── /chat ───────────────────────────────────────────────────────────────────
 
-app.post('/chat', smallJsonBody, aiLimiter, requireActiveEntitlement, requireCoachQuota, async (req, res) => {
+app.post('/chat', aiLimiter, smallJsonBody, requireActiveEntitlement, requireCoachQuota, async (req, res) => {
   console.log('[/chat] request received');
   const body = validate(chatSchema, req.body, res);
   if (!body) return;
@@ -705,29 +754,20 @@ app.post('/chat', smallJsonBody, aiLimiter, requireActiveEntitlement, requireCoa
 // ─── /calculate-tdee ─────────────────────────────────────────────────────────
 // Mifflin-St Jeor BMR → Claude picks activity multiplier from plain-English desc.
 
-app.post('/calculate-tdee', smallJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
+app.post('/calculate-tdee', lookupLimiter, smallJsonBody, requireActiveEntitlement, async (req, res) => {
   console.log('[/calculate-tdee] request received');
   const body = validate(tdeeSchema, req.body, res);
   if (!body) return;
-  const { height_cm, weight_kg, age, sex, goal, activityDescription } = body;
+  const { height_cm, weight_kg, age, sex, goal } = body;
 
   // Mifflin-St Jeor BMR (metric); 'other' uses average of male/female offsets (−78)
   const sexOffset = sex === 'male' ? 5 : sex === 'female' ? -161 : -78;
   const bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) + sexOffset;
   console.log(`[/calculate-tdee] BMR=${Math.round(bmr)} goal=${goal}`);
 
-  let multiplier = 1.55;
-  let explanation = 'Based on your description, you appear moderately active.';
-
-  if (activityDescription && activityDescription.trim().length > 5) {
-    try {
-      const parsed = await aiProvider.estimateTdeeMultiplier(activityDescription.trim());
-      if (parsed.multiplier >= 1.2 && parsed.multiplier <= 1.9) multiplier = parsed.multiplier;
-      if (parsed.explanation) explanation = parsed.explanation;
-    } catch (err) {
-      console.error('[/calculate-tdee] Claude error:', err.message);
-    }
-  }
+  // Deprecated route (the app calculates TDEE locally) — no paid AI call here.
+  const multiplier = 1.55;
+  const explanation = 'Assumes a moderately active lifestyle.';
 
   const tdee = Math.round(bmr * multiplier);
 
@@ -760,7 +800,7 @@ app.post('/calculate-tdee', smallJsonBody, aiLimiter, requireActiveEntitlement, 
 
 // ─── /interpret-quantity ─────────────────────────────────────────────────────
 
-app.post('/interpret-quantity', smallJsonBody, aiLimiter, requireActiveEntitlement, async (req, res) => {
+app.post('/interpret-quantity', aiLimiter, smallJsonBody, requireActiveEntitlement, async (req, res) => {
   const body = validate(interpretSchema, req.body, res);
   if (!body) return;
   const { foodName, description, servingSize, caloriesPerServing } = body;
@@ -812,6 +852,7 @@ app.get('/entitlements/me', smallJsonBody, async (req, res) => {
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') return sendImageTooLarge(res);
   const id = Math.random().toString(36).slice(2, 8);
   console.error(`[error:${id}]`, err.message);
   res.status(err.status || 500).json({ error: 'An unexpected error occurred', errorId: id });

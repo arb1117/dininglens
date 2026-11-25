@@ -20,14 +20,6 @@ export const KNOWN_LOCATIONS: Record<string, string> = Object.fromEntries(
     .map(venue => [venue.name, venue.locationId])
 );
 
-export const FAKE_MENU: MenuItem[] = [
-  { id: 'fake-1', name: 'Grilled Chicken Breast', calories: 165, protein: 31, carbs: 0,  fat: 3.6 },
-  { id: 'fake-2', name: 'White Rice',             calories: 130, protein: 2.7, carbs: 28, fat: 0.3 },
-  { id: 'fake-3', name: 'Green Beans',            calories: 35,  protein: 1.8, carbs: 8,  fat: 0.2 },
-  { id: 'fake-4', name: 'Mac and Cheese',         calories: 310, protein: 10,  carbs: 44, fat: 11  },
-  { id: 'fake-5', name: 'Turkey Burger',          calories: 270, protein: 22,  carbs: 24, fat: 9   },
-];
-
 function getCurrentPeriod(): { slug: string; label: string } {
   const now = new Date();
   const mins = now.getHours() * 60 + now.getMinutes();
@@ -82,77 +74,107 @@ function parseGramAmount(value: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+export type MenuResult = { items: MenuItem[]; periodLabel: string };
+
+// Matches the server's /analyze menuItems cap; larger payloads are rejected with 400.
+export const MAX_MENU_ITEMS = 200;
+const MENU_FETCH_TIMEOUT_MS = 10_000;
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MENU_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function capMenu(items: MenuItem[]): MenuItem[] {
+  const seen = new Set<string>();
+  const unique: MenuItem[] = [];
+  for (const item of items) {
+    const key = item.name.toLowerCase().trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push({ ...item, name: item.name.slice(0, 200) });
+    if (unique.length >= MAX_MENU_ITEMS) break;
+  }
+  return unique;
+}
+
+const PERIOD_ALIASES: Record<string, string[]> = {
+  breakfast: ['breakfast', 'brunch', 'morning'],
+  lunch:     ['lunch', 'brunch', 'midday'],
+  dinner:    ['dinner', 'supper', 'late night', 'late-night', 'evening'],
+};
+
+function matchPeriod(periods: any[], slug: string): any | null {
+  const aliases = PERIOD_ALIASES[slug] ?? [slug];
+  for (const alias of aliases) {
+    const hit = periods.find(
+      (p: any) => p?.slug === alias || String(p?.name ?? '').toLowerCase().includes(alias)
+    );
+    if (hit) return hit;
+  }
+  return periods.length === 1 ? periods[0] : null;
+}
+
 /**
- * Fetch the menu for a given dineoncampus location and date.
- * Automatically selects the current meal period.
- * Falls back to FAKE_MENU on any error or empty response.
+ * Fetch the menu for a given dineoncampus location and date, for the current
+ * meal period. Returns null when the menu cannot be loaded — callers must show
+ * "menu unavailable" rather than substituting placeholder food.
  *
- * @param locationId  dineoncampus location ID (see KNOWN_LOCATIONS)
- * @param date        ISO date string, e.g. "2026-06-05"
+ * @param date  local YYYY-MM-DD (use toDateKey, not toISOString)
  */
-export async function fetchMenu(
-  locationId: string,
-  date: string
-): Promise<{ items: MenuItem[]; periodLabel: string }> {
-  const { slug, label: periodLabel } = getCurrentPeriod();
+export async function fetchMenu(locationId: string, date: string): Promise<MenuResult | null> {
+  const { slug, label } = getCurrentPeriod();
 
   try {
-    const periodsRes = await fetch(
+    const periodsRes = await fetchWithTimeout(
       `${BASE_URL}/locations/${locationId}/periods/?date=${date}`,
       { headers: { Accept: 'application/json' } }
     );
-    if (!periodsRes.ok) throw new Error(`periods ${periodsRes.status}`);
+    if (!periodsRes.ok) return null;
 
     const periodsData = await periodsRes.json();
-    const periods: any[] = periodsData?.periods ?? periodsData ?? [];
+    const periods: any[] = periodsData?.periods ?? (Array.isArray(periodsData) ? periodsData : []);
 
-    const matched = periods.find(
-      (p: any) => p.slug === slug || p.name?.toLowerCase().includes(slug)
-    );
-    if (!matched) return { items: FAKE_MENU, periodLabel };
+    const matched = matchPeriod(periods, slug);
+    if (!matched) return null;
 
-    const menuRes = await fetch(
+    const menuRes = await fetchWithTimeout(
       `${BASE_URL}/locations/${locationId}/periods/?date=${date}&period_id=${matched.id}`,
       { headers: { Accept: 'application/json' } }
     );
-    if (!menuRes.ok) throw new Error(`menu ${menuRes.status}`);
+    if (!menuRes.ok) return null;
 
-    const menuData = await menuRes.json();
-    const items = parseItems(menuData);
-
-    return { items: items.length > 0 ? items : FAKE_MENU, periodLabel };
+    const items = capMenu(parseItems(await menuRes.json()));
+    if (items.length === 0) return null;
+    return { items, periodLabel: typeof matched.name === 'string' ? matched.name : label };
   } catch {
-    return { items: FAKE_MENU, periodLabel };
+    return null;
   }
 }
 
 export async function fetchVenueMenu(
   venue: { provider: DiningProvider | 'generic'; locationId: string },
   date: string
-): Promise<{ items: MenuItem[]; periodLabel: string }> {
-  if (venue.provider === 'dineoncampus') {
-    return fetchMenu(venue.locationId, date);
-  }
-
-  if (venue.provider === 'cs50') {
-    return fetchCs50Menu(venue.locationId, date);
-  }
-
-  return { items: FAKE_MENU, periodLabel: 'Menu' };
+): Promise<MenuResult | null> {
+  if (venue.provider === 'dineoncampus') return fetchMenu(venue.locationId, date);
+  if (venue.provider === 'cs50') return fetchCs50Menu(venue.locationId, date);
+  return null;
 }
 
-async function fetchCs50Menu(
-  locationId: string,
-  date: string
-): Promise<{ items: MenuItem[]; periodLabel: string }> {
+async function fetchCs50Menu(locationId: string, date: string): Promise<MenuResult | null> {
   const { mealId, label: periodLabel } = getCurrentCs50Meal();
 
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${CS50_BASE_URL}/menus?date=${date}&location=${encodeURIComponent(locationId)}&meal=${mealId}`,
       { headers: { Accept: 'application/json' } }
     );
-    if (!res.ok) throw new Error(`cs50 menus ${res.status}`);
+    if (!res.ok) return null;
 
     const data = await res.json();
     const recipeIds = [...new Set(
@@ -164,7 +186,7 @@ async function fetchCs50Menu(
     const recipes = await Promise.all(
       recipeIds.map(async id => {
         try {
-          const recipeRes = await fetch(`${CS50_BASE_URL}/recipes/${encodeURIComponent(String(id))}`);
+          const recipeRes = await fetchWithTimeout(`${CS50_BASE_URL}/recipes/${encodeURIComponent(String(id))}`);
           if (!recipeRes.ok) return null;
           return recipeRes.json();
         } catch {
@@ -173,7 +195,7 @@ async function fetchCs50Menu(
       })
     );
 
-    const items: MenuItem[] = recipes
+    const items: MenuItem[] = capMenu(recipes
       .filter((recipe: any) => recipe?.name)
       .map((recipe: any) => ({
         id: String(recipe.id),
@@ -182,10 +204,10 @@ async function fetchCs50Menu(
         protein: Math.round(parseGramAmount(recipe.protein) * 10) / 10,
         carbs: Math.round(parseGramAmount(recipe.total_carb) * 10) / 10,
         fat: Math.round(parseGramAmount(recipe.total_fat) * 10) / 10,
-      }));
+      })));
 
-    return { items: items.length > 0 ? items : FAKE_MENU, periodLabel };
+    return items.length > 0 ? { items, periodLabel } : null;
   } catch {
-    return { items: FAKE_MENU, periodLabel };
+    return null;
   }
 }

@@ -8,13 +8,13 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
 import { useMealContext, MacroItem, LoggedMeal, MealPeriod, autoDetectPeriod } from '../context/MealContext';
-import { MenuItem } from '../services/menuService';
+import { MenuItem, capMenu } from '../services/menuService';
 import { AnalysisResult } from '../services/visionService';
 import { apiFetch } from '../services/apiClient';
 import { saveMealFromItems } from '../services/savedMealService';
-import { applyCorrections, recordCorrection } from '../services/correctionMemoryService';
+import { applyCorrections, recordCorrections } from '../services/correctionMemoryService';
 import { recordVenueMeal } from '../services/venueMemoryService';
-import { findBestMenuMatch, applyMenuMatches } from '../utils/menuMatcher';
+import { findBestMenuMatch, applyMenuMatches, menuServingScale } from '../utils/menuMatcher';
 import type { StoredMealItem } from '../storage/schema';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estimate'>;
@@ -111,17 +111,7 @@ function buildInitialItems(
     return [];
   }
 
-  if (!analysisResult) {
-    return menuItems.slice(0, 3).map((item, i) => ({
-      id: item.id ?? `fallback-${i}`,
-      name: item.name,
-      cal: item.calories,
-      protein: item.protein,
-      carbs: item.carbs,
-      fat: item.fat,
-      source: 'menu' as ItemSource,
-    }));
-  }
+  if (!analysisResult) return [];
 
   if (analysisResult.mode === 'dining_hall') {
     return analysisResult.detectedItems
@@ -129,9 +119,7 @@ function buildInitialItems(
         const best = findBestMenuMatch(detected.name, menuItems);
         if (!best) return null;
         const { item: match } = best;
-        const scale = detected.estimatedQuantityGrams != null
-          ? detected.estimatedQuantityGrams / 100
-          : detected.portionMultiplier;
+        const scale = menuServingScale(detected);
         return {
           id: match.id,
           name: match.name,
@@ -188,7 +176,7 @@ function getHistorySuggestions(mealLog: LoggedMeal[], query: string): HistorySug
 
 export default function EstimateScreen({ navigation, route }: Props) {
   const { addMeal, menuItems, venue, mealLog } = useMealContext();
-  const { analysisResult, imageBase64, source, analysisError } = route.params;
+  const { analysisResult, imageBase64, source, analysisError, analysisErrorMessage } = route.params;
 
   const [items, setItems] = useState<NormalizedItem[]>(() =>
     buildInitialItems(analysisResult, menuItems, source)
@@ -208,8 +196,6 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const [countEdits, setCountEdits] = useState<Record<string, string>>({});
   // Editable amount strings for measurable items
   const [amountEdits, setAmountEdits] = useState<Record<string, string>>({});
-  // Unit selector for measurable items
-  const [unitSelections, setUnitSelections] = useState<Record<string, string>>({});
 
   const [pickedPeriod, setPickedPeriod] = useState<MealPeriod>(autoDetectPeriod());
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -274,10 +260,12 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
   // Apply stored corrections to AI-detected items on mount
   useEffect(() => {
-    if (items.length === 0) return;
-    applyCorrections(items).then(corrected => {
-      const changed = corrected.some((c, i) => c !== items[i]);
-      if (changed) setItems(corrected);
+    const aiItems = items.filter(i => i.source === 'ai');
+    if (aiItems.length === 0) return;
+    applyCorrections(aiItems).then(corrected => {
+      const renamed = new Map(corrected.map(c => [c.id, c.name]));
+      if (!corrected.some((c, i) => c.name !== aiItems[i].name)) return;
+      setItems(prev => prev.map(i => renamed.has(i.id) ? { ...i, name: renamed.get(i.id)! } : i));
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -330,7 +318,6 @@ export default function EstimateScreen({ navigation, route }: Props) {
     setQuantityMultipliers(prev => { const next = { ...prev }; delete next[id]; return next; });
     setCountEdits(prev => { const next = { ...prev }; delete next[id]; return next; });
     setAmountEdits(prev => { const next = { ...prev }; delete next[id]; return next; });
-    setUnitSelections(prev => { const next = { ...prev }; delete next[id]; return next; });
   }
 
   async function handleLookup() {
@@ -412,7 +399,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
           imageBase64,
           feedback: feedbackText.trim(),
           previousItems: items.map(i => ({ name: i.name })),
-          menuItems: isDiningHallMode ? menuItems : undefined,
+          menuItems: isDiningHallMode ? capMenu(menuItems) : undefined,
         }),
       });
       if (!res.ok) {
@@ -421,18 +408,16 @@ export default function EstimateScreen({ navigation, route }: Props) {
       }
       const newResult = await res.json() as AnalysisResult;
       const newItems = buildInitialItems(newResult, menuItems, source);
-      // Record name corrections: if old item[i] and new item[i] differ, remember the mapping
-      items.forEach((oldItem, idx) => {
-        const newItem = newItems[idx];
-        if (newItem && newItem.name !== oldItem.name) {
-          recordCorrection(oldItem.name, newItem.name, {
-            calories: newItem.cal,
-            protein: newItem.protein,
-            carbs: newItem.carbs,
-            fat: newItem.fat,
-          }).catch(() => {});
-        }
-      });
+      // Only AI-named items are remembered — menu and barcode names are authoritative.
+      // Index pairing is only trustworthy when the item count is unchanged.
+      if (newItems.length === items.length) {
+        recordCorrections(
+          items
+            .map((oldItem, idx) => ({ oldItem, newItem: newItems[idx] }))
+            .filter(({ oldItem, newItem }) => oldItem.source === 'ai' && newItem?.source === 'ai')
+            .map(({ oldItem, newItem }) => ({ originalName: oldItem.name, canonicalName: newItem.name }))
+        ).catch(() => {});
+      }
       setItems(newItems);
       setPortions(Object.fromEntries(newItems.map(i => [i.id, 'medium' as VisualPortion])));
       setFeedbackText('');
@@ -462,15 +447,19 @@ export default function EstimateScreen({ navigation, route }: Props) {
   );
 
   const [zerocalWarning, setZerocalWarning] = useState(false);
+  const submittedRef = useRef(false);
+  const [submitted, setSubmitted] = useState(false);
   const [saveOfferItems, setSaveOfferItems] = useState<StoredMealItem[] | null>(null);
 
   function handleLogMeal() {
-    if (items.length === 0) return;
+    if (items.length === 0 || submittedRef.current) return;
     if (totals.cal === 0) {
       setZerocalWarning(true);
       return;
     }
     setZerocalWarning(false);
+    submittedRef.current = true;
+    setSubmitted(true);
     const mealItems: MacroItem[] = items.map(item => {
       const portion = getPortionFor(item.id);
       const scaled = getScaled(item, portion);
@@ -504,7 +493,6 @@ export default function EstimateScreen({ navigation, route }: Props) {
         const rawAmt =
           parseFloat(amountEdits[item.id] ?? String(item.quantity)) || item.quantity!;
         finalQuantity = round1(rawAmt);
-        finalUnit = unitSelections[item.id] ?? item.unit;
         finalServingDescription = `${rawAmt} ${finalUnit} ${item.name}`.trim();
         portionLabel = finalServingDescription;
       } else {
@@ -545,14 +533,6 @@ export default function EstimateScreen({ navigation, route }: Props) {
         }).catch(() => {});
       });
     }
-    mealItems.forEach(item => {
-      recordCorrection(item.name, item.name, {
-        calories: item.cal,
-        protein: item.protein,
-        carbs: item.carbs,
-        fat: item.fat,
-      }).catch(() => {});
-    });
     setSaveOfferItems(mealItems.map(item => ({
       name: item.name,
       portion: item.portion,
@@ -574,11 +554,10 @@ export default function EstimateScreen({ navigation, route }: Props) {
   const noFoodError = !hasReanalyzed && analysisResult?.reason === 'no_food';
   const timeoutError = !hasReanalyzed && analysisResult?.reason === 'timeout';
   const parseError = !hasReanalyzed && analysisResult?.reason === 'parse_error';
-  const isFallback = !hasReanalyzed && !imageQualityError &&
-    !noFoodError && !timeoutError && !parseError && !analysisResult;
+  const isFallback = !hasReanalyzed && !analysisResult;
+  const usedMenu = items.some(i => i.source === 'menu');
   const sectionTitle = noFoodError ? 'No Food Detected' :
-    (timeoutError || parseError) ? 'Analysis Failed' :
-    isFallback ? 'Menu Items' : 'What you ate';
+    (timeoutError || parseError || analysisError) ? 'Analysis Failed' : 'What you ate';
 
   return (
     <>
@@ -596,7 +575,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
         {analysisError && (
           <View style={styles.analysisErrorCard}>
             <Text style={styles.analysisErrorText}>
-              Couldn't analyze this photo — check your connection and try again.
+              {analysisErrorMessage ?? "Couldn't analyze this photo — check your connection and try again."}
             </Text>
             <TouchableOpacity style={styles.retakeBtn} onPress={() => navigation.pop()}>
               <Text style={styles.retakeBtnText}>Retake</Text>
@@ -648,7 +627,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        {venue && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && (
+        {venue && usedMenu && (
           <View style={styles.venueCard}>
             <Text style={styles.venueCardText}>
               {'✓ Matched to '}
@@ -658,14 +637,8 @@ export default function EstimateScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        {isFallback && (
-          <View style={styles.fallbackCard}>
-            <Text style={styles.fallbackText}>Using default menu items — tap a size to adjust</Text>
-          </View>
-        )}
-
         {/* AI disclaimer — shown for photo-based AI estimates only */}
-        {imageBase64 && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && source !== 'barcode' && !venue && (
+        {imageBase64 && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && source !== 'barcode' && !usedMenu && (
           <View style={styles.aiDisclaimerCard}>
             <Text style={styles.aiDisclaimerTitle}>AI estimates — review before logging</Text>
             <Text style={styles.aiDisclaimerText}>
@@ -680,7 +653,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
           <View style={styles.emptyCard}>
             <Text style={styles.emptyText}>
               {noFoodError ? 'No meal items found in this photo.' :
-                (timeoutError || parseError) ? 'No reliable estimate was created.' :
+                (timeoutError || parseError || analysisError) ? 'No reliable estimate was created.' :
                 'No items yet - add something below'}
             </Text>
           </View>
@@ -760,22 +733,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
                         selectTextOnFocus
                         maxLength={6}
                       />
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.unitScroller}>
-                        <View style={{ flexDirection: 'row', gap: 6 }}>
-                          {QUANTITY_UNITS.filter(u => u !== 'count').map(u => {
-                            const active = (unitSelections[item.id] ?? item.unit) === u;
-                            return (
-                              <TouchableOpacity
-                                key={u}
-                                style={[styles.unitChip, active && styles.unitChipActive]}
-                                onPress={() => setUnitSelections(prev => ({ ...prev, [item.id]: u }))}
-                              >
-                                <Text style={[styles.unitChipText, active && styles.unitChipTextActive]}>{u}</Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </ScrollView>
+                      <Text style={styles.quantityUnitLabel}>{item.unit}</Text>
                     </View>
                   ) : (
                     /* Default: visual portion picker */
@@ -866,13 +824,13 @@ export default function EstimateScreen({ navigation, route }: Props) {
 
         {/* Totals card with traffic lights */}
         <View style={styles.totalsCard}>
-          {venue && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && (
+          {venue && usedMenu && (
             <Text style={styles.estimateStatusTeal}>✓ Using {venue.name} menu</Text>
           )}
           {source === 'barcode' && (
             <Text style={styles.estimateStatusTeal}>✓ Exact product data</Text>
           )}
-          {!venue && source !== 'barcode' && imageBase64 && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && (
+          {!usedMenu && source !== 'barcode' && imageBase64 && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && (
             <Text style={styles.estimateStatusSecondary}>AI estimate — tap to correct</Text>
           )}
           <Text style={styles.totalsTitle}>This meal</Text>
@@ -913,9 +871,9 @@ export default function EstimateScreen({ navigation, route }: Props) {
         )}
 
         <TouchableOpacity
-          style={[styles.button, items.length === 0 && styles.buttonDisabled]}
+          style={[styles.button, (items.length === 0 || submitted) && styles.buttonDisabled]}
           onPress={handleLogMeal}
-          disabled={items.length === 0}
+          disabled={items.length === 0 || submitted}
         >
           <Text style={styles.buttonText}>Log Meal</Text>
         </TouchableOpacity>
@@ -927,7 +885,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
         visible={saveOfferItems !== null}
         transparent
         animationType="slide"
-        onRequestClose={() => { setSaveOfferItems(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }}
+        onRequestClose={() => { setSaveOfferItems(null); navigation.popTo('MainTabs', { screen: 'Dashboard' }); }}
       >
         <View style={styles.saveOfferBackdrop}>
           <View style={styles.saveOfferSheet}>
@@ -943,14 +901,14 @@ export default function EstimateScreen({ navigation, route }: Props) {
                   itemsToSave.slice(0, 3).map(i => i.name).join(', '),
                   { defaultPeriod: pickedPeriod, venueId: venue?.id, venueName: venue?.name }
                 ).catch(() => {});
-                navigation.navigate('MainTabs', { screen: 'Dashboard' });
+                navigation.popTo('MainTabs', { screen: 'Dashboard' });
               }}
             >
               <Text style={styles.saveOfferBtnText}>Save this meal</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.saveOfferSkipBtn}
-              onPress={() => { setSaveOfferItems(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }}
+              onPress={() => { setSaveOfferItems(null); navigation.popTo('MainTabs', { screen: 'Dashboard' }); }}
             >
               <Text style={styles.saveOfferSkipText}>Skip</Text>
             </TouchableOpacity>
@@ -1102,11 +1060,6 @@ const styles = StyleSheet.create({
   venueCardText: { fontSize: 13, color: '#8A8A8A' },
   venueCardName: { fontWeight: '700', color: '#00E5A0' },
 
-  fallbackCard: {
-    backgroundColor: '#1A1A1A', borderRadius: 10, paddingVertical: 10,
-    paddingHorizontal: 14, marginBottom: 16, borderWidth: 1, borderColor: '#2A2A2A',
-  },
-  fallbackText: { fontSize: 13, color: '#8A8A8A' },
 
   aiDisclaimerCard: {
     backgroundColor: '#1A1400', borderRadius: 12, padding: 14, marginBottom: 16,
@@ -1187,14 +1140,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, fontSize: 16, fontWeight: '700', color: '#FFFFFF',
     borderWidth: 1, borderColor: '#3A3A3A',
   },
-  unitScroller: { flex: 1 },
-  unitChip: {
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
-    backgroundColor: '#2A2A2A',
-  },
-  unitChipActive: { backgroundColor: '#00E5A0' },
-  unitChipText: { fontSize: 12, fontWeight: '600', color: '#8A8A8A' },
-  unitChipTextActive: { color: '#0F0F0F' },
 
   // Confidence (kept for backward compat, unused)
   confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },

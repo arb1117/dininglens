@@ -55,6 +55,16 @@ export function findBestMenuMatch(
   return best;
 }
 
+const MAX_MENU_SERVINGS = 10;
+
+// Menu nutrition is per serving, so it must be scaled by servings — never by
+// grams/100, which inflated a 215g Big Mac to 2.15 servings.
+export function menuServingScale(detected: Pick<DetectedItem, 'servings'>): number {
+  const s = detected.servings;
+  if (typeof s !== 'number' || !Number.isFinite(s) || s <= 0) return 1;
+  return Math.min(s, MAX_MENU_SERVINGS);
+}
+
 export function applyMenuMatches(
   detectedItems: DetectedItem[],
   menuItems: MenuItem[],
@@ -64,9 +74,7 @@ export function applyMenuMatches(
   return detectedItems.map(detected => {
     const match = findBestMenuMatch(detected.name, menuItems, threshold);
     if (!match) return detected;
-    const scale = detected.estimatedQuantityGrams != null
-      ? detected.estimatedQuantityGrams / 100
-      : detected.portionMultiplier;
+    const scale = menuServingScale(detected);
     return {
       ...detected,
       name: match.item.name,

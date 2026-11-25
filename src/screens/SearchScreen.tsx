@@ -15,6 +15,7 @@ import PaywallPlaceholder from '../components/PaywallPlaceholder';
 import { listCustomFoods, saveCustomFood, recordCustomFoodUse } from '../services/customFoodService';
 import { getVenueItemSuggestions } from '../services/venueMemoryService';
 import type { StoredCustomFood } from '../storage/schema';
+import { toDateKey } from '../storage/storageKeys';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Search'>;
 
@@ -135,8 +136,8 @@ export default function SearchScreen({ navigation, route }: Props) {
   }, [query, nearbyVenue]);
 
   // Custom food modal
-  const [customVisible, setCustomVisible] = useState(false);
-  const [customName, setCustomName]       = useState('');
+  const [customVisible, setCustomVisible] = useState(params?.openCustom ?? false);
+  const [customName, setCustomName]       = useState(params?.openCustom ? (params?.query ?? '') : '');
   const [customCal, setCustomCal]         = useState('');
   const [customProtein, setCustomProtein] = useState('');
   const [customCarbs, setCustomCarbs]     = useState('');
@@ -172,7 +173,7 @@ export default function SearchScreen({ navigation, route }: Props) {
     setCustomVisible(false);
     setCustomName(''); setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
     setToastName(name);
-    setTimeout(() => { setToastName(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }, 1200);
+    setTimeout(() => { setToastName(null); navigation.popTo('MainTabs', { screen: 'Dashboard' }); }, 1200);
   }
 
   // Build My Foods index from mealLog
@@ -200,7 +201,7 @@ export default function SearchScreen({ navigation, route }: Props) {
         protein:     item.protein,
         carbs:       item.carbs,
         fat:         item.fat,
-        serving_size: '1 serving',
+        serving_size: item.portion || '1 serving',
       }));
   }, [myFoods, query]);
 
@@ -230,20 +231,21 @@ export default function SearchScreen({ navigation, route }: Props) {
       setLoading(false);
       return;
     }
+    const controller = new AbortController();
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await apiFetch(`/search?q=${encodeURIComponent(query.trim())}`);
+        const res = await apiFetch(`/search?q=${encodeURIComponent(query.trim())}`, { signal: controller.signal });
         if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
-        setApiResults(Array.isArray(data) ? data : []);
+        if (!controller.signal.aborted) setApiResults(Array.isArray(data) ? data : []);
       } catch {
-        setApiResults([]);
+        if (!controller.signal.aborted) setApiResults([]);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, 400);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); controller.abort(); };
   }, [query, filter]);
 
   const displayResults = useMemo((): DisplayResult[] => {
@@ -303,8 +305,9 @@ export default function SearchScreen({ navigation, route }: Props) {
         setNearbyItems(detected.menuItems as MenuItem[]);
         setNearbyPeriodLabel('Menu');
       } else if (detected.type === 'dining_hall') {
-        const date = new Date().toISOString().split('T')[0];
-        const { items, periodLabel } = await fetchVenueMenu(detected, date);
+        const result = await fetchVenueMenu(detected, toDateKey(new Date()));
+        if (!result) return;
+        const { items, periodLabel } = result;
         setNearbyVenue(detected);
         setNearbyItems(items);
         setNearbyPeriodLabel(periodLabel);
@@ -476,15 +479,17 @@ export default function SearchScreen({ navigation, route }: Props) {
         .catch(() => {});
     }
     setToastName(item.name);
-    setTimeout(() => { setToastName(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }, 1200);
+    setTimeout(() => { setToastName(null); navigation.popTo('MainTabs', { screen: 'Dashboard' }); }, 1200);
   }
 
   function handleAddToMeal() {
     const item = buildItem();
     setSheet(null);
-    navigation.navigate('Estimate', {
-      addedItem: { name: item.name, cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
-    });
+    navigation.popTo(
+      'Estimate',
+      { addedItem: { name: item.name, cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat } },
+      { merge: true }
+    );
   }
 
   function handleUpdate() {
@@ -612,7 +617,7 @@ export default function SearchScreen({ navigation, route }: Props) {
               </TouchableOpacity>
               <TouchableOpacity
                 style={s.aiSuggestionBtn}
-                onPress={() => navigation.navigate('MainTabs', { screen: 'AICoach' })}
+                onPress={() => navigation.popTo('MainTabs', { screen: 'AICoach' })}
               >
                 <Text style={s.aiSuggestionText}>Ask AI Coach instead →</Text>
               </TouchableOpacity>

@@ -29,6 +29,11 @@ export async function removeKey(key: string): Promise<void> {
   } catch {}
 }
 
+export async function removeKeysWithPrefix(prefix: string): Promise<void> {
+  const keys = await AsyncStorage.getAllKeys();
+  await AsyncStorage.multiRemove(keys.filter(k => k.startsWith(prefix)));
+}
+
 export async function getEnvelope<T>(
   key: string,
   fallback: T

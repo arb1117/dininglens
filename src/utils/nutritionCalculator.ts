@@ -66,6 +66,9 @@ export function calculateDailyCalories(
   }
 }
 
+const MAX_PROTEIN_REFERENCE_LBS = 240;
+const MAX_PROTEIN_CAL_SHARE = 0.4;
+
 export function calculateMacros(
   calories: number,
   weightLbs: number,
@@ -93,7 +96,13 @@ export function calculateMacros(
       break;
   }
 
-  const proteinGrams = Math.round(weightLbs * proteinPerLb);
+  // Per-lb protein targets assume lean-ish body weight; at high body weights they
+  // produce implausible targets (400lb -> 400g), so cap both the reference weight
+  // and protein's share of total calories.
+  const referenceLbs = Math.min(weightLbs, MAX_PROTEIN_REFERENCE_LBS);
+  const proteinGrams = Math.round(
+    Math.min(referenceLbs * proteinPerLb, (calories * MAX_PROTEIN_CAL_SHARE) / 4)
+  );
   const proteinCals = proteinGrams * 4;
   const fatGrams = Math.round((calories * fatCalPercent) / 9);
   const fatCals = fatGrams * 9;

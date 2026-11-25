@@ -10,6 +10,7 @@ import { API_BASE_URL } from '../config/api';
 import { useMealContext } from '../context/MealContext';
 import { useEntitlement } from '../hooks/useEntitlement';
 import { getInstallId } from '../services/identityService';
+import { removeKeysWithPrefix } from '../storage/storageClient';
 
 // App version from package.json — expo-constants would be more accurate in a real build
 const APP_VERSION = '1.0.0-beta';
@@ -18,7 +19,7 @@ type HealthState = 'unknown' | 'checking' | 'ok' | 'error';
 
 export default function DebugScreen() {
   const navigation = useNavigation();
-  const { mealLog, goals } = useMealContext();
+  const { mealLog, goals, resetAllState } = useMealContext();
   const { loading: entLoading, entitlement } = useEntitlement();
 
   const [health, setHealth]           = useState<HealthState>('unknown');
@@ -63,10 +64,9 @@ export default function DebugScreen() {
           onPress: async () => {
             setClearing(true);
             try {
-              const keys = await AsyncStorage.getAllKeys();
-              const dininglensKeys = keys.filter(k => k.startsWith('@dininglens'));
-              await AsyncStorage.multiRemove(dininglensKeys);
-              Alert.alert('Done', 'All local data cleared. Restart the app to see defaults.');
+              await removeKeysWithPrefix('@dininglens');
+              resetAllState();
+              Alert.alert('Done', 'All local data cleared.');
             } catch {
               Alert.alert('Error', 'Could not clear data — try again.');
             } finally {

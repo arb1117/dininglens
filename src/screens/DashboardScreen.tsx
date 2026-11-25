@@ -99,7 +99,7 @@ function MacroBar({ label, consumed, goal }: { label: string; consumed: number; 
     <View style={mb.row}>
       <Text style={mb.label}>{label}</Text>
       <View style={mb.barTrack}>
-        <View style={[mb.barFill, { width: `${progress * 100}%` as any }, over && mb.barOver, { backgroundColor: color }]} />
+        <View style={[mb.barFill, { width: `${progress * 100}%` as any }, { backgroundColor: over ? '#FF4444' : color }]} />
       </View>
       <Text style={mb.nums}>{consumed}<Text style={mb.goal}>/{goal}g</Text></Text>
     </View>
@@ -111,7 +111,6 @@ const mb = StyleSheet.create({
   label: { width: 56, fontSize: 12, fontWeight: '600', color: '#8A8A8A' },
   barTrack: { flex: 1, height: 8, backgroundColor: '#2A2A2A', borderRadius: 4, overflow: 'hidden' },
   barFill: { height: 8, borderRadius: 4 },
-  barOver: { backgroundColor: '#FF4444' },
   nums: { fontSize: 13, fontWeight: '700', color: '#FFFFFF', minWidth: 64, textAlign: 'right' },
   goal: { fontSize: 11, fontWeight: '400', color: '#8A8A8A' },
 });
@@ -330,11 +329,13 @@ export default function DashboardScreen() {
     addExercise,
     totalBurned,
     addMeal,
+    todayKey,
   } = useMealContext();
 
   const { status: backendStatus, retry: retryBackend } = useBackendHealth();
 
-  const today = new Date().toDateString();
+  // todayKey changes at midnight, which re-renders this screen into the new day.
+  const today = useMemo(() => new Date().toDateString(), [todayKey]);
 
   const todayMeals = useMemo(
     () => mealLog.filter(m => new Date(m.timestamp).toDateString() === today),

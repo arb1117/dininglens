@@ -35,70 +35,70 @@ export async function listCorrectionMemory(): Promise<StoredCorrectionMemoryEntr
   return entries.sort((a, b) => (b.timesSeen || 0) - (a.timesSeen || 0));
 }
 
-export async function recordCorrection(
-  originalName: string,
-  canonicalName: string,
-  macros: { calories?: number; protein?: number; carbs?: number; fat?: number },
-  source: StoredCorrectionMemoryEntry['source'] = 'photo_correction'
-): Promise<StoredCorrectionMemoryEntry> {
+export type CorrectionInput = {
+  originalName: string;
+  canonicalName: string;
+  source?: StoredCorrectionMemoryEntry['source'];
+};
+
+function normalize(name: string | undefined): string {
+  return (name ?? '').toLowerCase().trim();
+}
+
+// Correction memory stores name mappings only. Macros are deliberately not
+// persisted: logged values are portion-scaled, so re-applying them to the next
+// photo compounds the portion every time the food is logged.
+export async function recordCorrections(corrections: CorrectionInput[]): Promise<void> {
+  const meaningful = corrections.filter(
+    c => normalize(c.originalName) && normalize(c.canonicalName) && normalize(c.originalName) !== normalize(c.canonicalName)
+  );
+  if (meaningful.length === 0) return;
   const entries = await loadAll();
-  const normalizedOriginal = originalName.toLowerCase().trim();
-  const existing = entries.find(e => (e.originalName ?? '').toLowerCase().trim() === normalizedOriginal);
   const now = new Date().toISOString();
-  if (existing) {
-    existing.canonicalName = canonicalName;
-    existing.calories = macros.calories;
-    existing.protein = macros.protein;
-    existing.carbs = macros.carbs;
-    existing.fat = macros.fat;
-    existing.timesSeen = (existing.timesSeen || 0) + 1;
-    existing.lastUsedAt = now;
-    existing.updatedAt = now;
-    await saveAll(entries);
-    return existing;
+  for (const c of meaningful) {
+    const existing = entries.find(e => normalize(e.originalName) === normalize(c.originalName));
+    if (existing) {
+      existing.canonicalName = c.canonicalName;
+      existing.calories = undefined;
+      existing.protein = undefined;
+      existing.carbs = undefined;
+      existing.fat = undefined;
+      existing.timesSeen = (existing.timesSeen || 0) + 1;
+      existing.lastUsedAt = now;
+      existing.updatedAt = now;
+    } else {
+      entries.unshift({
+        id: uid(),
+        canonicalName: c.canonicalName,
+        originalName: c.originalName,
+        source: c.source ?? 'photo_correction',
+        confidence: 1,
+        timesSeen: 1,
+        lastUsedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   }
-  const entry: StoredCorrectionMemoryEntry = {
-    id: uid(),
-    canonicalName,
-    originalName,
-    calories: macros.calories,
-    protein: macros.protein,
-    carbs: macros.carbs,
-    fat: macros.fat,
-    source,
-    confidence: 1,
-    timesSeen: 1,
-    lastUsedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  };
-  await saveAll([entry, ...entries]);
-  return entry;
+  await saveAll(entries);
 }
 
 export async function findCorrection(originalName: string): Promise<StoredCorrectionMemoryEntry | null> {
   const entries = await loadAll();
-  const normalized = originalName.toLowerCase().trim();
-  return entries.find(e => (e.originalName ?? '').toLowerCase().trim() === normalized) ?? null;
+  const normalized = normalize(originalName);
+  return entries.find(e => normalize(e.originalName) === normalized) ?? null;
 }
 
-export async function applyCorrections<T extends { name: string; cal: number; protein: number; carbs: number; fat: number }>(
-  items: T[]
-): Promise<T[]> {
+export async function applyCorrections<T extends { name: string }>(items: T[]): Promise<T[]> {
   const entries = await loadAll();
   if (entries.length === 0) return items;
   return items.map(item => {
-    const normalized = item.name.toLowerCase().trim();
-    const match = entries.find(e => (e.originalName ?? '').toLowerCase().trim() === normalized);
+    const normalized = normalize(item.name);
+    const match = entries.find(
+      e => normalize(e.originalName) === normalized && normalize(e.canonicalName) !== normalized
+    );
     if (!match) return item;
-    return {
-      ...item,
-      name: match.canonicalName,
-      cal: match.calories ?? item.cal,
-      protein: match.protein ?? item.protein,
-      carbs: match.carbs ?? item.carbs,
-      fat: match.fat ?? item.fat,
-    };
+    return { ...item, name: match.canonicalName };
   });
 }
 

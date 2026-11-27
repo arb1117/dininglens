@@ -1,19 +1,20 @@
 {
   "expo": {
-    "name": "dininglens",
+    "name": "DiningLens",
     "slug": "dininglens",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.dininglens.app",
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "DiningLens uses the camera to photograph meals and scan barcodes.",
         "NSLocationWhenInUseUsageDescription": "DiningLens uses your location to detect nearby dining halls and restaurants for more accurate meal estimates.",
-        "NSPhotoLibraryUsageDescription": "DiningLens uses your photo library to analyze meals from your photos."
+        "NSPhotoLibraryUsageDescription": "DiningLens uses your photo library to analyze meals from your photos.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

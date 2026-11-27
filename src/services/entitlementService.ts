@@ -1,6 +1,6 @@
 import { apiFetch } from './apiClient';
 
-export type EntitlementStatus = 'trialing' | 'expired' | 'active';
+export type EntitlementStatus = 'trialing' | 'expired' | 'active' | 'beta';
 
 export type Entitlement = {
   status: EntitlementStatus;

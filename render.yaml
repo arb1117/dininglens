@@ -10,6 +10,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: BETA_OPEN_ACCESS
+        value: "true"
       - key: RATE_LIMIT_GLOBAL
         value: "300"
       - key: RATE_LIMIT_AI

@@ -273,7 +273,10 @@ async function assertPublicHttpsUrl(rawUrl) {
 // ─── Data sources ──────────────────────────────────────────────────────────
 
 async function searchOpenFoodFacts(query) {
-  const url = `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(query)}&fields=product_name,brands,serving_size,serving_quantity,nutriments,lang&page_size=10&lang=en&countries_tags=en:united-states`;
+  // The v2 /search endpoint ignores search_terms and returns popular products
+  // (Coca-Cola for "banana"); the legacy search.pl endpoint does full-text search.
+  const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&fields=product_name,brands,serving_size,serving_quantity,nutriments,lang&page_size=10&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states`;
+  const queryTokens = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
   const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
   const data = await res.json();
 
@@ -282,6 +285,8 @@ async function searchOpenFoodFacts(query) {
       if (!p.product_name) return null;
       // Skip products whose names contain no ASCII printable characters (foreign-language)
       if (!/[\x20-\x7E]/.test(p.product_name)) return null;
+      const haystack = `${p.product_name} ${p.brands || ''}`.toLowerCase();
+      if (queryTokens.length && !queryTokens.some(t => haystack.includes(t.replace(/s$/, '')))) return null;
 
       const n = p.nutriments || {};
       const sq = p.serving_quantity ? parseFloat(p.serving_quantity) : null;
@@ -314,6 +319,24 @@ async function searchOpenFoodFacts(query) {
     .filter(Boolean);
 }
 
+const KJ_PER_KCAL = 4.184;
+
+// Many FoodData Central records list "Energy" twice — once in kJ, once in kcal —
+// and the kJ entry often comes first (dehydrated banana showed 1450 "cal").
+// Some branded records also label a kJ value as KCAL (oatmeal: "1580 KCAL"/100g),
+// so a value far above the Atwater estimate from macros is treated as kJ.
+function energyKcal(nutrients = [], macros) {
+  const energy = nutrients.filter(n => String(n.nutrientName).startsWith('Energy'));
+  const kcalEntry = energy.find(n => String(n.unitName).toUpperCase() === 'KCAL');
+  const kjEntry = energy.find(n => String(n.unitName).toUpperCase() === 'KJ');
+  let kcal = kcalEntry ? kcalEntry.value || 0 : kjEntry ? (kjEntry.value || 0) / KJ_PER_KCAL : 0;
+  const atwater = 4 * macros.protein + 4 * macros.carbs + 9 * macros.fat;
+  if (atwater > 20 && kcal > atwater * 2 && Math.abs(kcal / KJ_PER_KCAL - atwater) < atwater * 0.35) {
+    kcal /= KJ_PER_KCAL;
+  }
+  return kcal;
+}
+
 async function searchUSDA(query) {
   const key = process.env.USDA_API_KEY || 'DEMO_KEY';
   const url = `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${key}`;
@@ -331,7 +354,11 @@ async function searchUSDA(query) {
     return {
       name: f.description,
       serving_size: hasServing ? `${Math.round(servingAmount * 10) / 10}${unitLabel}` : '100g',
-      calories: Math.round(get('Energy') * scale),
+      calories: Math.round(energyKcal(f.foodNutrients, {
+        protein: get('Protein'),
+        carbs: get('Carbohydrate, by difference'),
+        fat: get('Total lipid (fat)'),
+      }) * scale),
       protein: Math.round(get('Protein') * scale * 10) / 10,
       carbs: Math.round(get('Carbohydrate, by difference') * scale * 10) / 10,
       fat: Math.round(get('Total lipid (fat)') * scale * 10) / 10,

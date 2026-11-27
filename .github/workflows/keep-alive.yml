@@ -1,0 +1,23 @@
+name: Keep backend awake
+
+# Only needed on Render's free plan, which sleeps after ~15 minutes idle.
+# Set the repository variable HEALTH_URL (Settings → Secrets and variables →
+# Actions → Variables) to e.g. https://dininglens-api.onrender.com/health.
+# Without it this workflow does nothing. GitHub may run schedules late and
+# pauses them after 60 days without repository activity.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    if: ${{ vars.HEALTH_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /health
+        run: curl --fail --silent --show-error --max-time 60 "$HEALTH_URL"
+        env:
+          HEALTH_URL: ${{ vars.HEALTH_URL }}

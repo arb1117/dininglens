@@ -335,14 +335,21 @@ export default function CameraScreen({ navigation, route }: Props) {
       if (route.params?.initialMode === 'gallery') navigation.goBack();
       return;
     }
+    const readingLabel = scanMode === 'label';
     setAnalyzing(true);
-    setAnalyzingLabel('Analyzing meal...');
+    setAnalyzingLabel(readingLabel ? 'Reading nutrition label...' : 'Analyzing meal...');
     const galleryWakingTimer = setTimeout(
       () => setAnalyzingLabel('Starting analysis server…\nThis may take up to 30 seconds.'),
       6_000
     );
     setErrorBanner(null);
     try {
+      if (readingLabel) {
+        const labelResult = await readNutritionLabel(base64);
+        clearTimeout(galleryWakingTimer);
+        navigation.navigate('Estimate', { analysisResult: labelResult, source: 'label' });
+        return;
+      }
       const analysisResult = await analyzeImage(base64, isDiningHallMode ? menuItems : undefined);
       clearTimeout(galleryWakingTimer);
       navigation.navigate('Estimate', { analysisResult, imageBase64: base64 });
@@ -593,7 +600,7 @@ export default function CameraScreen({ navigation, route }: Props) {
         )}
 
         {/* Gallery picker — bottom-left, at shutter level */}
-        {scanMode === 'photo' && (
+        {scanMode !== 'barcode' && (
           <TouchableOpacity
             style={styles.galleryButton}
             onPress={handleGalleryPick}

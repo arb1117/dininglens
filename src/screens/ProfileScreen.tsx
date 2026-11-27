@@ -9,6 +9,11 @@ import { listCustomFoods, deleteCustomFood } from '../services/customFoodService
 import { getLatestWeight, addWeightEntry, getTrend } from '../services/weightService';
 import type { WeightTrend } from '../services/weightService';
 import type { StoredCustomFood, StoredWeightEntry } from '../storage/schema';
+import { getJSON, setJSON } from '../storage/storageClient';
+import { STORAGE_KEYS } from '../storage/storageKeys';
+
+const LBS_PER_KG = 2.20462;
+const round1 = (n: number) => Math.round(n * 10) / 10;
 
 const APP_VERSION = '1.0.0-beta';
 
@@ -32,6 +37,7 @@ export default function ProfileScreen() {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [weightInput, setWeightInput] = useState('');
   const [weightNote, setWeightNote] = useState('');
+  const [useKg, setUseKg] = useState(false);
 
   const refreshCustomFoods = useCallback(() => {
     listCustomFoods().then(setCustomFoods).catch(() => {});
@@ -47,18 +53,31 @@ export default function ProfileScreen() {
   useFocusEffect(useCallback(() => {
     refreshCustomFoods();
     refreshWeight();
+    getJSON<Record<string, unknown> | null>(STORAGE_KEYS.PROFILE, null)
+      .then(p => setUseKg(p?.useKg === true))
+      .catch(() => {});
   }, [refreshCustomFoods, refreshWeight]));
 
   function handleLogWeight() {
     const w = parseFloat(weightInput);
     if (!w || w <= 0) return;
-    addWeightEntry(w, undefined, weightNote.trim() || undefined)
+    addWeightEntry(useKg ? w * LBS_PER_KG : w, undefined, weightNote.trim() || undefined)
       .then(() => {
         setWeightInput('');
         setWeightNote('');
         setShowWeightModal(false);
         refreshWeight();
       })
+      .catch(() => {});
+  }
+
+  function toggleWeightUnit() {
+    const next = !useKg;
+    setUseKg(next);
+    const w = parseFloat(weightInput);
+    if (w > 0) setWeightInput(String(round1(next ? w / LBS_PER_KG : w * LBS_PER_KG)));
+    getJSON<Record<string, unknown> | null>(STORAGE_KEYS.PROFILE, null)
+      .then(p => setJSON(STORAGE_KEYS.PROFILE, { ...(p ?? {}), useKg: next }))
       .catch(() => {});
   }
 
@@ -75,6 +94,7 @@ export default function ProfileScreen() {
 
   function trialStatusText(): string | null {
     if (!entitlement) return null;
+    if (entitlement.status === 'beta') return 'Beta — free while testing';
     if (entitlement.status === 'trialing') {
       const ms   = new Date(entitlement.trialEndsAt).getTime() - Date.now();
       const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
@@ -212,7 +232,9 @@ export default function ProfileScreen() {
           )}
         </View>
         {latestWeight !== null ? (
-          <Text style={s.weightDisplay}>{latestWeight.weightLbs} lbs</Text>
+          <Text style={s.weightDisplay}>
+            {useKg ? `${round1(latestWeight.weightLbs / LBS_PER_KG)} kg` : `${latestWeight.weightLbs} lbs`}
+          </Text>
         ) : (
           <Text style={s.myFoodsEmpty}>No weight entries yet</Text>
         )}
@@ -276,13 +298,18 @@ export default function ProfileScreen() {
         <View style={wm.sheet}>
           <View style={wm.handle} />
           <Text style={wm.title}>Log Weight</Text>
-          <Text style={wm.fieldLabel}>Weight (lbs)</Text>
+          <View style={wm.labelRow}>
+            <Text style={wm.fieldLabel}>Weight ({useKg ? 'kg' : 'lbs'})</Text>
+            <TouchableOpacity onPress={toggleWeightUnit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={wm.unitSwitch}>Use {useKg ? 'lbs' : 'kg'}</Text>
+            </TouchableOpacity>
+          </View>
           <TextInput
             style={wm.input}
             value={weightInput}
             onChangeText={setWeightInput}
             keyboardType="decimal-pad"
-            placeholder="175.5"
+            placeholder={useKg ? '79.5' : '175.5'}
             placeholderTextColor="#555"
             autoFocus
             selectTextOnFocus
@@ -396,6 +423,8 @@ const wm = StyleSheet.create({
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#3A3A3A', alignSelf: 'center', marginTop: 12, marginBottom: 20 },
   title: { fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginBottom: 20 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: '#8A8A8A', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  unitSwitch: { fontSize: 13, fontWeight: '700', color: '#00E5A0', marginBottom: 8 },
   input: {
     backgroundColor: '#2A2A2A', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 16, color: '#FFFFFF', marginBottom: 18,

@@ -10,16 +10,20 @@ import {
   SafeAreaView,
   Modal,
   Alert,
+  Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useIsFocused } from '@react-navigation/native';
+import { getJSON, setJSON } from '../storage/storageClient';
+import { toDateKey } from '../storage/storageKeys';
+import { prepareImageForUpload } from '../utils/imagePrep';
 import { KNOWN_VENUES, detectVenueFull, Venue } from '../services/venueService';
 import { fetchVenueMenu } from '../services/menuService';
 import { CHAIN_MENUS, getChainMenuItems } from '../data/chainMenus';
-import { analyzeImage } from '../services/visionService';
+import { analyzeImage, readNutritionLabel, AnalysisError, describeAnalysisError } from '../services/visionService';
 import { useMealContext } from '../context/MealContext';
 import { useEntitlement } from '../hooks/useEntitlement';
 import { apiFetch } from '../services/apiClient';
@@ -27,7 +31,7 @@ import { apiFetch } from '../services/apiClient';
 type Props = NativeStackScreenProps<RootStackParamList, 'Camera'>;
 
 type DiningHallStatus = 'inactive' | 'loading' | 'active';
-type ScanMode = 'photo' | 'barcode';
+type ScanMode = 'photo' | 'barcode' | 'label';
 type EatingOutMode = 'options' | 'search';
 
 type VenueSearchResult = {
@@ -40,7 +44,7 @@ type VenueSearchResult = {
 };
 
 export default function CameraScreen({ navigation, route }: Props) {
-  const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems, mealLog, goals } =
+  const { setMenuItems, setPeriodLabel, setVenue, venue, menuItems, mealLog, goals } =
     useMealContext();
   const { entitlement } = useEntitlement();
 
@@ -65,6 +69,9 @@ export default function CameraScreen({ navigation, route }: Props) {
 
   const cameraRef = useRef<CameraView>(null);
   const lastScanAt = useRef<number>(0);
+  const isFocused = useIsFocused();
+  // Set once the user picks or dismisses a venue; async auto-detection must not override it.
+  const venueChosenManually = useRef(false);
 
   const isDiningHallMode = diningHallStatus === 'active';
 
@@ -144,9 +151,14 @@ export default function CameraScreen({ navigation, route }: Props) {
   }, []);
 
   useEffect(() => {
+    // Venue/menu state from a previous camera session must not leak into this one.
+    if (route.params?.initialMode !== 'dining') {
+      setVenue(null);
+      setMenuItems([]);
+    }
     if (route.params?.initialMode === 'dining') return; // handled above
     detectVenueFull().then(({ venue: detected, distanceKm }) => {
-      if (!detected || diningHallStatus !== 'inactive') return;
+      if (!detected || venueChosenManually.current) return;
       setVenueDistanceKm(isFinite(distanceKm) ? distanceKm : null);
 
       if (detected.type === 'restaurant' && detected.menuItems?.length) {
@@ -163,22 +175,39 @@ export default function CameraScreen({ navigation, route }: Props) {
 
   async function enableDiningHallModeForVenue(venueToLoad = KNOWN_VENUES[0]) {
     setDiningHallStatus('loading');
-    try {
-      const date = new Date().toISOString().split('T')[0];
-      const { items, periodLabel: label } = await fetchVenueMenu(venueToLoad, date);
-      setVenue(venueToLoad);
-      setMenuItems(items);
-      setPeriodLabel(label);
-      setDiningHallStatus('active');
-    } catch {
+    const result = await fetchVenueMenu(venueToLoad, toDateKey(new Date())).catch(() => null);
+    if (!result) {
       setDiningHallStatus('inactive');
-      setErrorBanner("Couldn't load menu — using generic mode");
+      setVenue(null);
+      setMenuItems([]);
+      setErrorBanner(`${venueToLoad.name} menu unavailable right now — using AI estimates`);
+      return;
     }
+    setVenue(venueToLoad);
+    setMenuItems(result.items);
+    setPeriodLabel(result.periodLabel);
+    setDiningHallStatus('active');
   }
 
   function disableDiningHallMode() {
+    venueChosenManually.current = true;
     setDiningHallStatus('inactive');
     setVenue(null);
+    setMenuItems([]);
+    setVenueDistanceKm(null);
+  }
+
+  function handleAnalysisFailure(err: unknown, imageBase64: string | undefined) {
+    if (err instanceof AnalysisError && err.kind === 'trial_expired') {
+      showTrialExpiredAlert();
+      return;
+    }
+    navigation.navigate('Estimate', {
+      analysisResult: undefined,
+      imageBase64,
+      analysisError: true,
+      analysisErrorMessage: describeAnalysisError(err),
+    });
   }
 
   function showTrialExpiredAlert() {
@@ -192,8 +221,9 @@ export default function CameraScreen({ navigation, route }: Props) {
   async function handleShutter() {
     if (!cameraRef.current || analyzing) return;
     if (entitlement && !entitlement.canUseApp) { showTrialExpiredAlert(); return; }
+    const readingLabel = scanMode === 'label';
     setAnalyzing(true);
-    setAnalyzingLabel('Analyzing meal...');
+    setAnalyzingLabel(readingLabel ? 'Reading nutrition label...' : 'Analyzing meal...');
     const wakingTimer = setTimeout(
       () => setAnalyzingLabel('Starting analysis server…\nThis may take up to 30 seconds.'),
       6_000
@@ -202,16 +232,22 @@ export default function CameraScreen({ navigation, route }: Props) {
     let imageBase64: string | undefined;
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        base64: true,
-        quality: 0.5,
+        quality: 0.8,
         skipProcessing: true,
       });
 
-      if (!photo?.base64) throw new Error('No image data');
-      imageBase64 = photo.base64;
+      if (!photo?.uri) throw new Error('No image data');
+      imageBase64 = await prepareImageForUpload(photo.uri, photo.width, photo.height);
+
+      if (readingLabel) {
+        const labelResult = await readNutritionLabel(imageBase64);
+        clearTimeout(wakingTimer);
+        navigation.navigate('Estimate', { analysisResult: labelResult, source: 'label' });
+        return;
+      }
 
       const result = await analyzeImage(
-        photo.base64,
+        imageBase64,
         isDiningHallMode ? menuItems : undefined
       );
 
@@ -220,7 +256,7 @@ export default function CameraScreen({ navigation, route }: Props) {
     } catch (err) {
       clearTimeout(wakingTimer);
       console.error('Shutter error:', err);
-      navigation.navigate('Estimate', { analysisResult: undefined, imageBase64, analysisError: true });
+      handleAnalysisFailure(err, imageBase64);
     } finally {
       setAnalyzing(false);
     }
@@ -228,7 +264,7 @@ export default function CameraScreen({ navigation, route }: Props) {
 
   async function handleBarcodeScan({ data }: { data: string }) {
     const now = Date.now();
-    if (now - lastScanAt.current < 3000 || barcodeScanning) return;
+    if (!isFocused || now - lastScanAt.current < 3000 || barcodeScanning) return;
     if (entitlement && !entitlement.canUseApp) { showTrialExpiredAlert(); return; }
     lastScanAt.current = now;
     setBarcodeScanning(true);
@@ -236,10 +272,18 @@ export default function CameraScreen({ navigation, route }: Props) {
     setBarcodeNotFoundCode(null);
     try {
       const res = await apiFetch(`/barcode?code=${encodeURIComponent(data)}`);
-      if (res.status === 404) {
-        setBarcodeError('Product not found — try searching manually');
+      if (res.status === 404 || res.status === 422) {
+        const body: { name?: string | null } = await res.json().catch(() => ({}));
+        setBarcodeError(res.status === 404
+          ? 'Product not found — try searching manually'
+          : `${body.name ?? 'This product'} has no nutrition info listed — try searching manually`);
         setBarcodeNotFoundCode(data);
-        setBarcodeScanning(false);
+        return;
+      }
+      if (res.status === 401 || res.status === 403) { showTrialExpiredAlert(); return; }
+      if (res.status === 429) { setBarcodeError('Too many scans — wait a minute and try again'); return; }
+      if (res.status === 502 || res.status === 504) {
+        setBarcodeError('The food database isn’t responding — try again shortly');
         return;
       }
       if (!res.ok) throw new Error(`Server ${res.status}`);
@@ -258,8 +302,10 @@ export default function CameraScreen({ navigation, route }: Props) {
         mode: 'generic' as const,
       };
       navigation.navigate('Estimate', { analysisResult, source: 'barcode' });
-    } catch {
-      setBarcodeError('Lookup failed — try again');
+    } catch (err) {
+      setBarcodeError(err instanceof TypeError
+        ? 'Can’t reach the DiningLens server — check your connection'
+        : 'Lookup failed — try again');
     } finally {
       setBarcodeScanning(false);
     }
@@ -274,33 +320,42 @@ export default function CameraScreen({ navigation, route }: Props) {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: 'images',
-      base64: true,
-      quality: 0.5,
+      quality: 1,
     });
     if (result.canceled) {
       if (route.params?.initialMode === 'gallery') navigation.goBack();
       return;
     }
-    const base64 = result.assets?.[0]?.base64;
+    const asset = result.assets?.[0];
+    const base64 = asset?.uri
+      ? await prepareImageForUpload(asset.uri, asset.width, asset.height).catch(() => undefined)
+      : undefined;
     if (!base64) {
       setErrorBanner('Could not load photo');
       if (route.params?.initialMode === 'gallery') navigation.goBack();
       return;
     }
+    const readingLabel = scanMode === 'label';
     setAnalyzing(true);
-    setAnalyzingLabel('Analyzing meal...');
+    setAnalyzingLabel(readingLabel ? 'Reading nutrition label...' : 'Analyzing meal...');
     const galleryWakingTimer = setTimeout(
       () => setAnalyzingLabel('Starting analysis server…\nThis may take up to 30 seconds.'),
       6_000
     );
     setErrorBanner(null);
     try {
+      if (readingLabel) {
+        const labelResult = await readNutritionLabel(base64);
+        clearTimeout(galleryWakingTimer);
+        navigation.navigate('Estimate', { analysisResult: labelResult, source: 'label' });
+        return;
+      }
       const analysisResult = await analyzeImage(base64, isDiningHallMode ? menuItems : undefined);
       clearTimeout(galleryWakingTimer);
       navigation.navigate('Estimate', { analysisResult, imageBase64: base64 });
-    } catch {
+    } catch (err) {
       clearTimeout(galleryWakingTimer);
-      navigation.navigate('Estimate', { analysisResult: undefined, imageBase64: base64, analysisError: true });
+      handleAnalysisFailure(err, base64);
     } finally {
       setAnalyzing(false);
     }
@@ -314,14 +369,15 @@ export default function CameraScreen({ navigation, route }: Props) {
 
   async function handleUseLocation() {
     setDetectingLocation(true);
+    venueChosenManually.current = true;
     try {
       const { venue: detected, distanceKm, permissionDenied } = await detectVenueFull();
       closeEatingOutModal();
       if (permissionDenied) {
         const key = 'locationDeniedShown';
-        const already = await AsyncStorage.getItem(key).catch(() => null);
+        const already = await getJSON<boolean>(key, false).catch(() => false);
         if (!already) {
-          await AsyncStorage.setItem(key, '1').catch(() => {});
+          await setJSON(key, true).catch(() => {});
           setErrorBanner('Location access helps auto-detect nearby dining halls and restaurants');
         }
         return;
@@ -344,6 +400,7 @@ export default function CameraScreen({ navigation, route }: Props) {
   }
 
   async function handleSelectVenue(result: VenueSearchResult) {
+    venueChosenManually.current = true;
     closeEatingOutModal();
     setVenueDistanceKm(null);
     if (result.type === 'dining_hall' && result.venueRef) {
@@ -379,7 +436,10 @@ export default function CameraScreen({ navigation, route }: Props) {
           DiningLens needs camera access to photograph your meal and scan barcodes.
           {'\n\n'}Enable it in Settings → Privacy → Camera.
         </Text>
-        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+        <TouchableOpacity
+          style={styles.permissionButton}
+          onPress={() => (permission.canAskAgain ? requestPermission() : Linking.openSettings())}
+        >
           <Text style={styles.permissionButtonText}>Grant Camera Access</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -392,8 +452,9 @@ export default function CameraScreen({ navigation, route }: Props) {
         ref={cameraRef}
         style={styles.camera}
         facing="back"
-        enableTorch={torch}
-        onBarcodeScanned={scanMode === 'barcode' ? handleBarcodeScan : undefined}
+        active={isFocused}
+        enableTorch={torch && isFocused}
+        onBarcodeScanned={scanMode === 'barcode' && isFocused ? handleBarcodeScan : undefined}
         barcodeScannerSettings={scanMode === 'barcode' ? {
           barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'qr', 'code128', 'code39'],
         } : undefined}
@@ -480,10 +541,7 @@ export default function CameraScreen({ navigation, route }: Props) {
                 onPress={() => {
                   setBarcodeNotFoundCode(null);
                   setBarcodeError(null);
-                  navigation.navigate('Estimate', {
-                    analysisResult: undefined,
-                    imageBase64: undefined,
-                  });
+                  navigation.navigate('Search', { openCustom: true });
                 }}
               >
                 <Text style={styles.barcodeRecoveryBtnText}>✏️  Enter nutrition manually</Text>
@@ -523,8 +581,26 @@ export default function CameraScreen({ navigation, route }: Props) {
           <Text style={styles.barcodeButtonText}>📦</Text>
         </TouchableOpacity>
 
+        {/* Nutrition label toggle — top-right, below barcode */}
+        <TouchableOpacity
+          style={[styles.labelButton, scanMode === 'label' && styles.barcodeButtonOn]}
+          onPress={() => {
+            setScanMode(m => m === 'label' ? 'photo' : 'label');
+            setBarcodeError(null);
+          }}
+          disabled={analyzing}
+        >
+          <Text style={styles.barcodeButtonText}>🏷</Text>
+        </TouchableOpacity>
+
+        {scanMode === 'label' && (
+          <View style={styles.labelHint} pointerEvents="none">
+            <Text style={styles.labelHintText}>Photograph the posted nutrition card or package label</Text>
+          </View>
+        )}
+
         {/* Gallery picker — bottom-left, at shutter level */}
-        {scanMode === 'photo' && (
+        {scanMode !== 'barcode' && (
           <TouchableOpacity
             style={styles.galleryButton}
             onPress={handleGalleryPick}
@@ -535,7 +611,7 @@ export default function CameraScreen({ navigation, route }: Props) {
         )}
 
         {/* Shutter — centered, 80px from bottom (hidden in barcode mode) */}
-        {scanMode === 'photo' && (
+        {scanMode !== 'barcode' && (
           <View style={styles.shutterContainer} pointerEvents="box-none">
             <TouchableOpacity
               style={[styles.shutter, analyzing && styles.shutterDisabled]}
@@ -976,6 +1052,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   barcodeButtonOn: { backgroundColor: '#00E5A0' },
+  labelButton: {
+    position: 'absolute',
+    right: 20,
+    top: 172,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  labelHint: {
+    position: 'absolute', left: 24, right: 24, top: '40%',
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, padding: 14,
+  },
+  labelHintText: { color: '#FFFFFF', fontSize: 15, textAlign: 'center', fontWeight: '600' },
   barcodeButtonText: { fontSize: 22 },
 
   // Barcode scanning overlay

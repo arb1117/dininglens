@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform,
+  ScrollView, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -16,6 +16,7 @@ import {
   calculateAll,
   estimateActivityLevel,
   goalKeyToBodyGoal,
+  parseGoalInput,
 } from '../utils/nutritionCalculator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Goals'>;
@@ -226,8 +227,6 @@ export default function GoalsScreen({ navigation }: Props) {
     return null;
   }
 
-  const profileComplete = !validateProfile();
-
   // ── Calculate locally ─────────────────────────────────────────────────────
   function handleCalculate() {
     const weightN   = parseFloat(weight);
@@ -296,6 +295,14 @@ export default function GoalsScreen({ navigation }: Props) {
     await setJSON(STORAGE_KEYS.PROFILE, profile);
   }
 
+  // First run (from Permissions) has no MainTabs underneath, so reset instead of
+  // pushing a second navigator on top of Goals.
+  function goToMainTabs() {
+    const hasMainTabs = navigation.getState().routes.some(r => r.name === 'MainTabs');
+    if (hasMainTabs) navigation.popTo('MainTabs');
+    else navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+  }
+
   async function saveAndGo(cal: number, protein: number, carbs: number, fat: number) {
     const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
     await setJSON(STORAGE_KEYS.GOALS, g);
@@ -304,14 +311,18 @@ export default function GoalsScreen({ navigation }: Props) {
     const weightN = parseFloat(weight) || 0;
     const weightLbs = useKg ? weightN * 2.205 : weightN;
     seedWeightFromProfile(weightLbs).catch(() => {});
-    navigation.navigate('MainTabs');
+    goToMainTabs();
   }
 
   async function saveManual() {
-    const cal     = parseInt(manCal)     || 2200;
-    const protein = parseInt(manProtein) || 150;
-    const carbs   = parseInt(manCarbs)   || 220;
-    const fat     = parseInt(manFat)     || 70;
+    const cal     = parseGoalInput(manCal, 2200);
+    const protein = parseGoalInput(manProtein, 150);
+    const carbs   = parseGoalInput(manCarbs, 220);
+    const fat     = parseGoalInput(manFat, 70);
+    if (cal <= 0) {
+      Alert.alert('Calorie goal required', 'Enter a daily calorie goal above 0.');
+      return;
+    }
     const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
     await setJSON(STORAGE_KEYS.GOALS, g);
     setGoals(g);
@@ -319,7 +330,7 @@ export default function GoalsScreen({ navigation }: Props) {
     const weightN = parseFloat(weight) || 0;
     const weightLbs = useKg ? weightN * 2.205 : weightN;
     seedWeightFromProfile(weightLbs).catch(() => {});
-    navigation.navigate('MainTabs');
+    goToMainTabs();
   }
 
   function openManualFromResult() {

@@ -19,6 +19,11 @@ install date.
 **Impact:** trial enforcement is unreliable. Users whose trials have expired
 may get a fresh trial after a restart.
 
+**Beta mitigation (2026-11):** `BETA_OPEN_ACCESS=true` (set in `render.yaml`)
+makes `getComputedStatus()` return `beta`, so trials never expire and a restart
+cannot strand or reset testers. Daily coach/scrape limits still apply. Turn it
+off only once records are persisted.
+
 **Fix:** replace the `Map` with a PostgreSQL table (Supabase). Schema:
 ```sql
 CREATE TABLE entitlements (
@@ -121,18 +126,18 @@ casts or have incomplete type coverage:
 
 **Fix:** incremental — replace `any` with proper types as screens are edited.
 
-### KI-009 — No automated test suite
+### KI-009 — Test coverage is partial
 
-There are no unit tests, integration tests, or snapshot tests. Verification is
-entirely manual.
+**Partly resolved (2026-11):** Jest runs two projects (`npm test`): app
+(`jest-expo`) and server (node + supertest), plus GitHub Actions CI
+(`.github/workflows/ci.yml`) running check, lint and tests on every PR.
+Covered: `menuMatcher`, `nutritionCalculator` (incl. `parseGoalInput`),
+`servingUnits`, `customFoodService` dedupe, `/health`, `/analyze` validation,
+`/read-label`, `/barcode` error paths, `BETA_OPEN_ACCESS`.
 
-**Impact:** regressions are caught late. High-risk areas with no test coverage:
-- `menuMatcher.ts` (tokenSimilarity threshold changes could silently break matching)
-- `nutritionCalculator.ts` (formula edge cases for extreme inputs)
-- `entitlementService.js` (quota reset logic)
-- `assertPublicHttpsUrl()` (SSRF protection)
-
-**Fix:** start with unit tests for the pure functions above (Jest or Vitest).
+**Still uncovered:** `assertPublicHttpsUrl()` (SSRF protection), quota reset
+across days, `/search` merge/dedupe and `energyKcal` (not exported), screens
+(no component tests), storage migrations.
 
 ### KI-010 — Scrape cache is in-memory (resets with server)
 
@@ -157,6 +162,11 @@ one won't count") if the server responds with a 5xx. Would require changing the
 pre-decrement logic on the server.
 
 ### KI-012 — Barcode scan returns per-100g values for products without serving data
+
+*Related fix (2026-11):* products with no nutrition at all now return 422
+`no_nutrition` instead of a 0-calorie item, and kJ-only products are converted
+to kcal. The per-100g default below is unchanged.
+
 
 When Open Food Facts lacks `serving_quantity` for a product, `/barcode` defaults
 to `servingGrams = 100` and reports nutrients per 100g as if it were one serving.
@@ -200,6 +210,41 @@ advisory appears.
 
 ---
 
+### KI-019 — Texas A&M (DineOnCampus) menus cannot be fetched
+
+`apiv4.dineoncampus.com` sits behind Cloudflare bot protection and returns 403
+to non-browser clients (verified 2026-11 from Node fetch and okhttp). TAMU
+dining-hall mode therefore falls back to AI estimates with the
+"menu unavailable" banner. Circumventing the block (browser/TLS fingerprint
+impersonation, bulk scraping) was deliberately **not** done.
+
+**Status:** permission/data-feed request sent to Aggie Dining (Nov 2026).
+**Interim:** nutrition-label scan (🏷 on the camera, `POST /read-label`) reads
+the cards posted at stations. Harvard (CS50 API) is unaffected.
+
+### KI-020 — Production backend not deployed
+
+As of 2026-11-27 `https://dininglens-api.onrender.com` returns
+`x-render-routing: no-server`. Every EAS profile points there, so builds cannot
+analyze photos until the Render service is created. Steps are in
+`DEPLOYMENT_PREVIEW.md` → "Status".
+
+### KI-021 — DebugScreen reads AsyncStorage directly
+
+`src/screens/DebugScreen.tsx` imports AsyncStorage, which breaks the
+"storage only through storageClient.ts" rule. It is a hidden developer screen
+(tap the version 5×), so it was left as is; move it onto `storageClient` when
+next edited.
+
+### KI-022 — Label scan not yet verified on real cards
+
+`/read-label` was verified with a generated card image and a blank image, and
+the UI on the Android emulator. It has not been tried on real dining-hall cards
+or package labels on a phone. Small print, glare, and dual-column labels are the
+likely failure cases (they should return `no_label`, not a guess).
+
+---
+
 ## Low priority / cosmetic
 
 ### KI-015 — `FAKE_MENU` fallback shown without explanation
@@ -226,7 +271,7 @@ change their menus. There is no process to refresh it.
 ## Won't fix (by design)
 
 - **No meal sync between devices** — by design until Supabase is integrated.
-- **Trial timer persists only while server is running** — by design for prototype.
-  Accepted tradeoff for zero-DB simplicity in beta.
+- **Trial timer persists only while server is running** — by design for prototype;
+  `BETA_OPEN_ACCESS` neutralizes it for the free beta (see KI-001).
 - **JS-rendered restaurant websites return empty scrape** — acceptable for beta;
   fix deferred to paid tier.

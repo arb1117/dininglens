@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { MenuItem, FAKE_MENU } from '../services/menuService';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { AppState } from 'react-native';
+import { MenuItem } from '../services/menuService';
 import { Venue } from '../services/venueService';
 import { STORAGE_KEYS, toDateKey } from '../storage/storageKeys';
 import { getJSON, setJSON, removeKey } from '../storage/storageClient';
 import { migrateStorageIfNeeded } from '../storage/migrations';
 import { sanitizeArray, sanitizeMeal, sanitizeGoals, sanitizeExerciseEntry } from '../storage/storageValidation';
+import type { MealPeriod, MacroItem, NutritionTotals } from '../types/nutrition';
 
 export type UserGoals = {
   preset: 'lose' | 'maintain' | 'build' | 'recomposition';
@@ -46,7 +48,6 @@ const DEFAULT_GOALS: UserGoals = {
 };
 
 export type { MealPeriod, MacroItem, NutritionTotals, FoodItem, VenueMetadata } from '../types/nutrition';
-import type { MealPeriod, MacroItem, NutritionTotals } from '../types/nutrition';
 
 export function autoDetectPeriod(date = new Date()): MealPeriod {
   const h = date.getHours();
@@ -88,6 +89,7 @@ type MealContextType = {
   updateMealItem: (mealId: string, itemIndex: number, updated: MacroItem) => void;
   deleteMeal: (mealId: string) => void;
   deleteMealItem: (mealId: string, itemIndex: number) => void;
+  restoreMeal: (meal: LoggedMeal) => void;
   goals: UserGoals;
   setGoals: (goals: UserGoals) => void;
   menuItems: MenuItem[];
@@ -102,6 +104,9 @@ type MealContextType = {
   addExercise: (entry: Omit<ExerciseEntry, 'id'>) => void;
   totalBurned: number;
   resetDayStats: () => void;
+  resetAllState: () => void;
+  // Local YYYY-MM-DD; changes at midnight so consumers re-render into the new day.
+  todayKey: string;
 };
 
 const MealContext = createContext<MealContextType>({
@@ -110,9 +115,10 @@ const MealContext = createContext<MealContextType>({
   updateMealItem: () => {},
   deleteMeal: () => {},
   deleteMealItem: () => {},
+  restoreMeal: () => {},
   goals: DEFAULT_GOALS,
   setGoals: () => {},
-  menuItems: FAKE_MENU,
+  menuItems: [],
   setMenuItems: () => {},
   periodLabel: 'Dinner',
   setPeriodLabel: () => {},
@@ -124,15 +130,18 @@ const MealContext = createContext<MealContextType>({
   addExercise: () => {},
   totalBurned: 0,
   resetDayStats: () => {},
+  resetAllState: () => {},
+  todayKey: toDateKey(new Date()),
 });
 
 export function MealProvider({ children }: { children: ReactNode }) {
   const [mealLog, setMealLog] = useState<LoggedMeal[]>([]);
   const [goals, setGoalsState] = useState<UserGoals>(DEFAULT_GOALS);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(FAKE_MENU);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [periodLabel, setPeriodLabel] = useState('Dinner');
   const [venue, setVenue] = useState<Venue | null>(null);
-  const dateKey = toDateKey(new Date());
+  const [dateKey, setDateKey] = useState(() => toDateKey(new Date()));
+  const hydrated = useRef(false);
   const waterKey = STORAGE_KEYS.WATER(dateKey);
   const exerciseKey = STORAGE_KEYS.EXERCISE(dateKey);
   const [waterCups, setWaterCups] = useState(0);
@@ -142,13 +151,36 @@ export function MealProvider({ children }: { children: ReactNode }) {
     async function init() {
       await migrateStorageIfNeeded();
       const meals = await getJSON<unknown>(STORAGE_KEYS.MEAL_LOG, [], v => Array.isArray(v));
-      setMealLog(sanitizeArray(meals, sanitizeMeal));
+      const stored = sanitizeArray(meals, sanitizeMeal);
+      // Meals logged before hydration finished are merged in front of stored
+      // history rather than overwriting it.
+      setMealLog(prev => {
+        const storedIds = new Set(stored.map(m => m.id));
+        const merged = [...prev.filter(m => !storedIds.has(m.id)), ...stored];
+        hydrated.current = true;
+        if (prev.length > 0) setJSON(STORAGE_KEYS.MEAL_LOG, merged);
+        return merged;
+      });
       const g = await getJSON<unknown>(STORAGE_KEYS.GOALS, null);
       const cleanGoals = sanitizeGoals(g);
       if (cleanGoals) setGoalsState(cleanGoals);
     }
-    init().catch(() => {});
+    init().catch(() => { hydrated.current = true; });
   }, []);
+
+  useEffect(() => {
+    const refresh = () => setDateKey(prev => {
+      const now = toDateKey(new Date());
+      return now === prev ? prev : now;
+    });
+    const interval = setInterval(refresh, 60_000);
+    const sub = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
+    return () => { clearInterval(interval); sub.remove(); };
+  }, []);
+
+  function persistMeals(next: LoggedMeal[]) {
+    if (hydrated.current) setJSON(STORAGE_KEYS.MEAL_LOG, next);
+  }
 
   useEffect(() => {
     getJSON<number>(waterKey, 0, v => typeof v === 'number')
@@ -166,7 +198,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
   function addMeal(meal: LoggedMeal) {
     setMealLog(prev => {
       const next = [meal, ...prev];
-      setJSON(STORAGE_KEYS.MEAL_LOG, next);
+      persistMeals(next);
       setJSON(STORAGE_KEYS.LAST_LOGGED, new Date().toDateString());
       return next;
     });
@@ -188,7 +220,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
         );
         return { ...meal, items: newItems, totals };
       });
-      setJSON(STORAGE_KEYS.MEAL_LOG, next);
+      persistMeals(next);
       return next;
     });
   }
@@ -196,7 +228,16 @@ export function MealProvider({ children }: { children: ReactNode }) {
   function deleteMeal(mealId: string) {
     setMealLog(prev => {
       const next = prev.filter(m => m.id !== mealId);
-      setJSON(STORAGE_KEYS.MEAL_LOG, next);
+      persistMeals(next);
+      return next;
+    });
+  }
+
+  function restoreMeal(meal: LoggedMeal) {
+    setMealLog(prev => {
+      const next = [meal, ...prev.filter(m => m.id !== meal.id)]
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      persistMeals(next);
       return next;
     });
   }
@@ -220,7 +261,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
           return { ...meal, items: newItems, totals };
         })
         .filter((m): m is LoggedMeal => m !== null);
-      setJSON(STORAGE_KEYS.MEAL_LOG, next);
+      persistMeals(next);
       return next;
     });
   }
@@ -242,6 +283,15 @@ export function MealProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  function resetAllState() {
+    setMealLog([]);
+    setGoalsState(DEFAULT_GOALS);
+    setMenuItems([]);
+    setVenue(null);
+    setWaterCups(0);
+    setExerciseLog([]);
+  }
+
   function resetDayStats() {
     setWaterCups(0);
     setExerciseLog([]);
@@ -259,6 +309,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
         updateMealItem,
         deleteMeal,
         deleteMealItem,
+        restoreMeal,
         goals,
         setGoals,
         menuItems,
@@ -273,6 +324,8 @@ export function MealProvider({ children }: { children: ReactNode }) {
         addExercise,
         totalBurned,
         resetDayStats,
+        resetAllState,
+        todayKey: dateKey,
       }}
     >
       {children}

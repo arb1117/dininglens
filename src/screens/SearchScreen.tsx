@@ -13,8 +13,10 @@ import { apiFetch } from '../services/apiClient';
 import { useEntitlement } from '../hooks/useEntitlement';
 import PaywallPlaceholder from '../components/PaywallPlaceholder';
 import { listCustomFoods, saveCustomFood, recordCustomFoodUse } from '../services/customFoodService';
+import { parseGramWeight, parseMlVolume, getUnitOptions, computeServingMultiplier } from '../utils/servingUnits';
 import { getVenueItemSuggestions } from '../services/venueMemoryService';
 import type { StoredCustomFood } from '../storage/schema';
+import { toDateKey } from '../storage/storageKeys';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Search'>;
 
@@ -108,7 +110,6 @@ export default function SearchScreen({ navigation, route }: Props) {
   const [pickedPeriod, setPickedPeriod] = useState<MealPeriod>(
     selectedPeriod ?? autoDetectPeriod()
   );
-  const periodLocked = !!selectedPeriod;
 
   // Custom foods from persistent store
   const [customFoods, setCustomFoods] = useState<StoredCustomFood[]>([]);
@@ -135,8 +136,8 @@ export default function SearchScreen({ navigation, route }: Props) {
   }, [query, nearbyVenue]);
 
   // Custom food modal
-  const [customVisible, setCustomVisible] = useState(false);
-  const [customName, setCustomName]       = useState('');
+  const [customVisible, setCustomVisible] = useState(params?.openCustom ?? false);
+  const [customName, setCustomName]       = useState(params?.openCustom ? (params?.query ?? '') : '');
   const [customCal, setCustomCal]         = useState('');
   const [customProtein, setCustomProtein] = useState('');
   const [customCarbs, setCustomCarbs]     = useState('');
@@ -168,11 +169,11 @@ export default function SearchScreen({ navigation, route }: Props) {
       carbs: item.carbs,
       fat: item.fat,
       source: 'manual',
-    }).then(saved => setCustomFoods(prev => [saved, ...prev])).catch(() => {});
+    }).then(saved => setCustomFoods(prev => [saved, ...prev.filter(f => f.id !== saved.id)])).catch(() => {});
     setCustomVisible(false);
     setCustomName(''); setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
     setToastName(name);
-    setTimeout(() => { setToastName(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }, 1200);
+    setTimeout(() => { setToastName(null); navigation.popTo('MainTabs', { screen: 'Dashboard' }); }, 1200);
   }
 
   // Build My Foods index from mealLog
@@ -200,7 +201,7 @@ export default function SearchScreen({ navigation, route }: Props) {
         protein:     item.protein,
         carbs:       item.carbs,
         fat:         item.fat,
-        serving_size: '1 serving',
+        serving_size: item.portion || '1 serving',
       }));
   }, [myFoods, query]);
 
@@ -230,20 +231,21 @@ export default function SearchScreen({ navigation, route }: Props) {
       setLoading(false);
       return;
     }
+    const controller = new AbortController();
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await apiFetch(`/search?q=${encodeURIComponent(query.trim())}`);
+        const res = await apiFetch(`/search?q=${encodeURIComponent(query.trim())}`, { signal: controller.signal });
         if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
-        setApiResults(Array.isArray(data) ? data : []);
+        if (!controller.signal.aborted) setApiResults(Array.isArray(data) ? data : []);
       } catch {
-        setApiResults([]);
+        if (!controller.signal.aborted) setApiResults([]);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, 400);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); controller.abort(); };
   }, [query, filter]);
 
   const displayResults = useMemo((): DisplayResult[] => {
@@ -303,8 +305,9 @@ export default function SearchScreen({ navigation, route }: Props) {
         setNearbyItems(detected.menuItems as MenuItem[]);
         setNearbyPeriodLabel('Menu');
       } else if (detected.type === 'dining_hall') {
-        const date = new Date().toISOString().split('T')[0];
-        const { items, periodLabel } = await fetchVenueMenu(detected, date);
+        const result = await fetchVenueMenu(detected, toDateKey(new Date()));
+        if (!result) return;
+        const { items, periodLabel } = result;
         setNearbyVenue(detected);
         setNearbyItems(items);
         setNearbyPeriodLabel(periodLabel);
@@ -359,48 +362,6 @@ export default function SearchScreen({ navigation, route }: Props) {
       servingSize: '1 serving',
     });
     resetServingState();
-  }
-
-  // ── Serving helpers ────────────────────────────────────────────────────────
-
-  function parseGramWeight(servingSize: string): number | null {
-    const gm = servingSize.match(/(\d+\.?\d*)\s*g\b/i);
-    if (gm) return parseFloat(gm[1]);
-    const oz = servingSize.match(/(\d+\.?\d*)\s*oz\b/i);
-    if (oz) return parseFloat(oz[1]) * 28.35;
-    return null;
-  }
-
-  function parseMlVolume(servingSize: string): number | null {
-    const ml = servingSize.match(/(\d+\.?\d*)\s*(ml|mL)/);
-    if (ml) return parseFloat(ml[1]);
-    const floz = servingSize.match(/(\d+\.?\d*)\s*fl\.?\s*oz/i);
-    if (floz) return parseFloat(floz[1]) * 29.57;
-    return null;
-  }
-
-  function getUnitOptions(servingSize: string): string[] {
-    const gw = parseGramWeight(servingSize);
-    const ml = parseMlVolume(servingSize);
-    const opts = ['serving'];
-    if (gw) opts.push('g', 'oz', 'cup', 'tbsp', 'tsp');
-    else if (ml) opts.push('ml', 'fl oz', 'cup', 'tbsp', 'tsp');
-    opts.push('piece', 'slice', 'scoop');
-    return opts;
-  }
-
-  function computeServingMultiplier(n: number, u: string, gw: number | null, ml: number | null): number {
-    if (n <= 0) return 0;
-    switch (u) {
-      case 'g':    return gw ? n / gw : n;
-      case 'oz':   return gw ? (n * 28.35) / gw : n;
-      case 'ml':   return ml ? n / ml : n;
-      case 'fl oz': return ml ? (n * 29.57) / ml : n;
-      case 'cup':  return gw ? (n * 240) / gw : ml ? (n * 240) / ml : n;
-      case 'tbsp': return gw ? (n * 15)  / gw : ml ? (n * 15)  / ml : n;
-      case 'tsp':  return gw ? (n * 5)   / gw : ml ? (n * 5)   / ml : n;
-      default: return n; // serving, piece, slice, scoop
-    }
   }
 
   const gramWeight = sheet ? parseGramWeight(sheet.servingSize) : null;
@@ -476,15 +437,17 @@ export default function SearchScreen({ navigation, route }: Props) {
         .catch(() => {});
     }
     setToastName(item.name);
-    setTimeout(() => { setToastName(null); navigation.navigate('MainTabs', { screen: 'Dashboard' }); }, 1200);
+    setTimeout(() => { setToastName(null); navigation.popTo('MainTabs', { screen: 'Dashboard' }); }, 1200);
   }
 
   function handleAddToMeal() {
     const item = buildItem();
     setSheet(null);
-    navigation.navigate('Estimate', {
-      addedItem: { name: item.name, cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat },
-    });
+    navigation.popTo(
+      'Estimate',
+      { addedItem: { name: item.name, cal: item.cal, protein: item.protein, carbs: item.carbs, fat: item.fat } },
+      { merge: true }
+    );
   }
 
   function handleUpdate() {
@@ -612,7 +575,7 @@ export default function SearchScreen({ navigation, route }: Props) {
               </TouchableOpacity>
               <TouchableOpacity
                 style={s.aiSuggestionBtn}
-                onPress={() => navigation.navigate('MainTabs', { screen: 'AICoach' })}
+                onPress={() => navigation.popTo('MainTabs', { screen: 'AICoach' })}
               >
                 <Text style={s.aiSuggestionText}>Ask AI Coach instead →</Text>
               </TouchableOpacity>

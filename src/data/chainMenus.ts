@@ -859,9 +859,9 @@ export function findChainMatch(placeName: string): string | null {
 }
 
 // Returns MenuItem-compatible objects (id, name, calories, protein, carbs, fat)
-export function getChainMenuItems(chainName: string): Array<{
+export function getChainMenuItems(chainName: string): {
   id: string; name: string; calories: number; protein: number; carbs: number; fat: number;
-}> {
+}[] {
   const items = CHAIN_MENUS[chainName];
   if (!items) return [];
   const prefix = chainName.toLowerCase().replace(/[^a-z0-9]/g, '-');

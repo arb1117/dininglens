@@ -5,13 +5,14 @@ import {
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
-import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 
 import type { RootStackParamList, TabParamList } from '../../App';
 import ProfileScreen from '../screens/ProfileScreen';
 
 // Lazy imports so the main navigator doesn't load heavy screens up front
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const DashboardScreen = require('../screens/DashboardScreen').default;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const AIChatScreen    = require('../screens/AIChatScreen').default;
 
 const Tab = createBottomTabNavigator<TabParamList>();

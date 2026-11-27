@@ -66,6 +66,9 @@ export function calculateDailyCalories(
   }
 }
 
+const MAX_PROTEIN_REFERENCE_LBS = 240;
+const MAX_PROTEIN_CAL_SHARE = 0.4;
+
 export function calculateMacros(
   calories: number,
   weightLbs: number,
@@ -93,7 +96,13 @@ export function calculateMacros(
       break;
   }
 
-  const proteinGrams = Math.round(weightLbs * proteinPerLb);
+  // Per-lb protein targets assume lean-ish body weight; at high body weights they
+  // produce implausible targets (400lb -> 400g), so cap both the reference weight
+  // and protein's share of total calories.
+  const referenceLbs = Math.min(weightLbs, MAX_PROTEIN_REFERENCE_LBS);
+  const proteinGrams = Math.round(
+    Math.min(referenceLbs * proteinPerLb, (calories * MAX_PROTEIN_CAL_SHARE) / 4)
+  );
   const proteinCals = proteinGrams * 4;
   const fatGrams = Math.round((calories * fatCalPercent) / 9);
   const fatCals = fatGrams * 9;
@@ -178,4 +187,11 @@ export function goalKeyToBodyGoal(key: 'lose' | 'maintain' | 'build' | 'recompos
     recomposition: 'recomposition',
   };
   return map[key] ?? 'maintain';
+}
+
+// Blank fields fall back to defaults, but an explicit 0 (e.g. a 0g carb goal) is kept.
+export function parseGoalInput(input: string, fallback: number): number {
+  if (!input.trim()) return fallback;
+  const n = parseInt(input, 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
 }

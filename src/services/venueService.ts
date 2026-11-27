@@ -11,7 +11,7 @@ export type Venue = {
   locationId: string;
   provider: DiningProvider | 'generic';
   coords: Coords;
-  menuItems?: Array<{ id: string; name: string; calories: number; protein: number; carbs: number; fat: number }>;
+  menuItems?: { id: string; name: string; calories: number; protein: number; carbs: number; fat: number }[];
 };
 
 export type VenueDetectionResult = {
@@ -71,7 +71,8 @@ async function detectFromCoords(coords: Coords): Promise<{ venue: Venue | null; 
   try {
     const { detectNearbyRestaurant } = await import('./restaurantService');
     const restaurant = await detectNearbyRestaurant(coords);
-    if (restaurant && restaurant.distance_km <= 0.1 && restaurant.distance_km < nearestHall.distanceKm) {
+    const restaurantDistKm = restaurant?.placeCoords ? haversineKm(coords, restaurant.placeCoords) : Infinity;
+    if (restaurant && restaurantDistKm <= 0.1 && restaurantDistKm < nearestHall.distanceKm) {
       return {
         venue: {
           id: restaurant.id,
@@ -80,10 +81,10 @@ async function detectFromCoords(coords: Coords): Promise<{ venue: Venue | null; 
           type: 'restaurant',
           locationId: restaurant.id,
           provider: 'generic',
-          coords,
+          coords: restaurant.placeCoords ?? coords,
           menuItems: restaurant.menuItems,
         },
-        distanceKm: restaurant.distance_km,
+        distanceKm: restaurantDistKm,
       };
     }
   } catch {

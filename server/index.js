@@ -885,9 +885,14 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: 'An unexpected error occurred', errorId: id });
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`DiningLens proxy running on :${PORT}`);
-  console.log(`ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'present' : 'MISSING'}`);
-  console.log(`USDA_API_KEY: ${process.env.USDA_API_KEY ? 'present' : 'DEMO_KEY (default)'}`);
-});
+// Tests require this module to get the app without binding a port.
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`DiningLens proxy running on :${PORT}`);
+    console.log(`ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'present' : 'MISSING'}`);
+    console.log(`USDA_API_KEY: ${process.env.USDA_API_KEY ? 'present' : 'DEMO_KEY (default)'}`);
+  });
+}
+
+module.exports = app;

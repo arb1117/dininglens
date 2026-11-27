@@ -25,7 +25,7 @@ export type DetectedItem = {
 export type AnalysisResult = {
   detectedItems: DetectedItem[];
   mode: 'dining_hall' | 'generic';
-  reason?: 'image_quality' | 'low_confidence' | 'no_food' | 'parse_error' | 'timeout';
+  reason?: 'image_quality' | 'low_confidence' | 'no_food' | 'no_label' | 'parse_error' | 'timeout';
 };
 
 export type AnalysisErrorKind = 'trial_expired' | 'rate_limited' | 'too_large' | 'timeout' | 'server' | 'network';
@@ -51,18 +51,23 @@ export function describeAnalysisError(err: unknown): string {
   }
 }
 
-export async function analyzeImage(
-  imageBase64: string,
-  menuItems?: MenuItem[]
-): Promise<AnalysisResult> {
+export function analyzeImage(imageBase64: string, menuItems?: MenuItem[]): Promise<AnalysisResult> {
+  return postImage('/analyze', { imageBase64, menuItems: menuItems ? capMenu(menuItems) : undefined });
+}
+
+export function readNutritionLabel(imageBase64: string): Promise<AnalysisResult> {
+  return postImage('/read-label', { imageBase64 });
+}
+
+async function postImage(path: string, payload: object): Promise<AnalysisResult> {
   // AbortSignal.timeout is not reliably available in React Native's runtime.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await apiFetch('/analyze', {
+    response = await apiFetch(path, {
       method: 'POST',
-      body: JSON.stringify({ imageBase64, menuItems: menuItems ? capMenu(menuItems) : undefined }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
   } catch (err) {

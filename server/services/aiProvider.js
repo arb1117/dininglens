@@ -291,6 +291,54 @@ Return ONLY the JSON object with no markdown formatting, no code fences, and no 
   return validateAnalysisResult(response.content[0]?.text ?? '');
 }
 
+// Reads printed numbers off a nutrition card or label; unlike meal analysis it must
+// never estimate, so an unreadable card returns no_label instead of a guess.
+async function readNutritionLabel(imageBase64) {
+  const prompt = `This photo should show a posted nutrition card, menu placard, or packaged-food nutrition label.
+
+Read ONLY numbers that are printed in the image. Do not estimate or infer missing values.
+
+Return JSON:
+{"found": true, "name": "<food name as printed, or a short description if none>", "servingSize": "<serving size as printed, or null>", "calories": <number>, "protein": <number or null>, "carbs": <number or null>, "fat": <number or null>}
+
+- Use per-serving values as printed. If the card lists both per-serving and per-container, use per-serving.
+- "carbs" is Total Carbohydrate; "fat" is Total Fat.
+- If calories are not printed or not legible, return {"found": false, "reason": "no_label"}.
+- If the image is not a nutrition card or label, return {"found": false, "reason": "no_label"}.
+
+Return ONLY the JSON object.`;
+
+  const response = await callAnthropic({
+    model: MODEL,
+    max_tokens: 300,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
+        { type: 'text', text: prompt },
+      ],
+    }],
+  });
+
+  let parsed;
+  try {
+    parsed = extractJSON(response.content[0]?.text ?? '');
+  } catch {
+    return { found: false, reason: 'no_label' };
+  }
+  const calories = clampNum(parsed.calories, 0, 5000, NaN);
+  if (!parsed.found || !Number.isFinite(calories)) return { found: false, reason: 'no_label' };
+  return {
+    found: true,
+    name: String(parsed.name || 'Labeled item').slice(0, 120),
+    servingSize: parsed.servingSize ? String(parsed.servingSize).slice(0, 60) : null,
+    calories: Math.round(calories),
+    protein: clampNum(parsed.protein, 0, 500, 0),
+    carbs: clampNum(parsed.carbs, 0, 1000, 0),
+    fat: clampNum(parsed.fat, 0, 500, 0),
+  };
+}
+
 async function reanalyzeMeal(imageBase64, feedback, previousItems, menuItems) {
   const previousList = Array.isArray(previousItems) && previousItems.length > 0
     ? previousItems.map(i => i.name).join(', ')
@@ -498,6 +546,7 @@ async function estimateTdeeMultiplier(activityDescription) {
 
 module.exports = {
   analyzeMealImage,
+  readNutritionLabel,
   reanalyzeMeal,
   chatCoach,
   interpretQuantity,

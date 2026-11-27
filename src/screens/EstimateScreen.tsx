@@ -64,7 +64,7 @@ function fatSignal(g: number) {
 
 function round1(n: number) { return Math.round(n * 10) / 10; }
 
-type ItemSource = 'ai' | 'menu' | 'barcode' | 'manual';
+type ItemSource = 'ai' | 'menu' | 'barcode' | 'label' | 'manual';
 
 const QUANTITY_UNITS = ['count', 'grams', 'oz', 'cups', 'tbsp', 'tsp', 'slices', 'pieces'] as const;
 type QuantityUnit = typeof QUANTITY_UNITS[number];
@@ -91,6 +91,7 @@ const SOURCE_BADGE: Record<ItemSource, string> = {
   ai:     '📷 AI estimated',
   menu:   '📋 Menu matched',
   barcode:'📦 Barcode scanned',
+  label:  '🏷 Read from label',
   manual: '🔍 Manually added',
 };
 
@@ -98,6 +99,7 @@ const EMPTY_ANALYSIS_REASONS = new Set([
   'image_quality',
   'low_confidence',
   'no_food',
+  'no_label',
   'parse_error',
   'timeout',
 ]);
@@ -132,6 +134,20 @@ function buildInitialItems(
         };
       })
       .filter((x) => x !== null) as NormalizedItem[];
+  }
+
+  if (routeSource === 'label') {
+    return analysisResult.detectedItems.map((item, i) => ({
+      id: `label-${i}`,
+      name: item.name,
+      cal: item.calories ?? 0,
+      protein: item.protein ?? 0,
+      carbs: item.carbs ?? 0,
+      fat: item.fat ?? 0,
+      confidence: item.confidence,
+      source: 'label' as ItemSource,
+      servingDescription: item.servingDescription,
+    }));
   }
 
   const src: ItemSource = routeSource === 'barcode' ? 'barcode' : 'ai';
@@ -552,6 +568,7 @@ export default function EstimateScreen({ navigation, route }: Props) {
     analysisResult?.reason === 'image_quality' || analysisResult?.reason === 'low_confidence'
   );
   const noFoodError = !hasReanalyzed && analysisResult?.reason === 'no_food';
+  const noLabelError = analysisResult?.reason === 'no_label';
   const timeoutError = !hasReanalyzed && analysisResult?.reason === 'timeout';
   const parseError = !hasReanalyzed && analysisResult?.reason === 'parse_error';
   const isFallback = !hasReanalyzed && !analysisResult;
@@ -568,6 +585,11 @@ export default function EstimateScreen({ navigation, route }: Props) {
           {source === 'barcode' && (
             <View style={styles.barcodeBadge}>
               <Text style={styles.barcodeBadgeText}>📦 Scanned</Text>
+            </View>
+          )}
+          {source === 'label' && !noLabelError && (
+            <View style={styles.barcodeBadge}>
+              <Text style={styles.barcodeBadgeText}>🏷 Label</Text>
             </View>
           )}
         </View>
@@ -587,6 +609,17 @@ export default function EstimateScreen({ navigation, route }: Props) {
           <View style={styles.imageQualityBanner}>
             <Text style={styles.imageQualityText}>
               📸 Image too dark or unclear — try again in better lighting
+            </Text>
+            <TouchableOpacity style={styles.retakeBtn} onPress={() => navigation.pop()}>
+              <Text style={styles.retakeBtnText}>Retake</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {noLabelError && (
+          <View style={styles.imageQualityBanner}>
+            <Text style={styles.imageQualityText}>
+              Couldn't read calories on that label — get closer with the numbers in focus, or add the item below
             </Text>
             <TouchableOpacity style={styles.retakeBtn} onPress={() => navigation.pop()}>
               <Text style={styles.retakeBtnText}>Retake</Text>
@@ -829,6 +862,9 @@ export default function EstimateScreen({ navigation, route }: Props) {
           )}
           {source === 'barcode' && (
             <Text style={styles.estimateStatusTeal}>✓ Exact product data</Text>
+          )}
+          {source === 'label' && !noLabelError && (
+            <Text style={styles.estimateStatusTeal}>✓ Read from the posted label — check the numbers</Text>
           )}
           {!usedMenu && source !== 'barcode' && imageBase64 && !isFallback && !imageQualityError && !noFoodError && !timeoutError && !parseError && (
             <Text style={styles.estimateStatusSecondary}>AI estimate — tap to correct</Text>

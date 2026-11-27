@@ -23,7 +23,7 @@ import { prepareImageForUpload } from '../utils/imagePrep';
 import { KNOWN_VENUES, detectVenueFull, Venue } from '../services/venueService';
 import { fetchVenueMenu } from '../services/menuService';
 import { CHAIN_MENUS, getChainMenuItems } from '../data/chainMenus';
-import { analyzeImage, AnalysisError, describeAnalysisError } from '../services/visionService';
+import { analyzeImage, readNutritionLabel, AnalysisError, describeAnalysisError } from '../services/visionService';
 import { useMealContext } from '../context/MealContext';
 import { useEntitlement } from '../hooks/useEntitlement';
 import { apiFetch } from '../services/apiClient';
@@ -31,7 +31,7 @@ import { apiFetch } from '../services/apiClient';
 type Props = NativeStackScreenProps<RootStackParamList, 'Camera'>;
 
 type DiningHallStatus = 'inactive' | 'loading' | 'active';
-type ScanMode = 'photo' | 'barcode';
+type ScanMode = 'photo' | 'barcode' | 'label';
 type EatingOutMode = 'options' | 'search';
 
 type VenueSearchResult = {
@@ -221,8 +221,9 @@ export default function CameraScreen({ navigation, route }: Props) {
   async function handleShutter() {
     if (!cameraRef.current || analyzing) return;
     if (entitlement && !entitlement.canUseApp) { showTrialExpiredAlert(); return; }
+    const readingLabel = scanMode === 'label';
     setAnalyzing(true);
-    setAnalyzingLabel('Analyzing meal...');
+    setAnalyzingLabel(readingLabel ? 'Reading nutrition label...' : 'Analyzing meal...');
     const wakingTimer = setTimeout(
       () => setAnalyzingLabel('Starting analysis server…\nThis may take up to 30 seconds.'),
       6_000
@@ -237,6 +238,13 @@ export default function CameraScreen({ navigation, route }: Props) {
 
       if (!photo?.uri) throw new Error('No image data');
       imageBase64 = await prepareImageForUpload(photo.uri, photo.width, photo.height);
+
+      if (readingLabel) {
+        const labelResult = await readNutritionLabel(imageBase64);
+        clearTimeout(wakingTimer);
+        navigation.navigate('Estimate', { analysisResult: labelResult, source: 'label' });
+        return;
+      }
 
       const result = await analyzeImage(
         imageBase64,
@@ -566,6 +574,24 @@ export default function CameraScreen({ navigation, route }: Props) {
           <Text style={styles.barcodeButtonText}>📦</Text>
         </TouchableOpacity>
 
+        {/* Nutrition label toggle — top-right, below barcode */}
+        <TouchableOpacity
+          style={[styles.labelButton, scanMode === 'label' && styles.barcodeButtonOn]}
+          onPress={() => {
+            setScanMode(m => m === 'label' ? 'photo' : 'label');
+            setBarcodeError(null);
+          }}
+          disabled={analyzing}
+        >
+          <Text style={styles.barcodeButtonText}>🏷</Text>
+        </TouchableOpacity>
+
+        {scanMode === 'label' && (
+          <View style={styles.labelHint} pointerEvents="none">
+            <Text style={styles.labelHintText}>Photograph the posted nutrition card or package label</Text>
+          </View>
+        )}
+
         {/* Gallery picker — bottom-left, at shutter level */}
         {scanMode === 'photo' && (
           <TouchableOpacity
@@ -578,7 +604,7 @@ export default function CameraScreen({ navigation, route }: Props) {
         )}
 
         {/* Shutter — centered, 80px from bottom (hidden in barcode mode) */}
-        {scanMode === 'photo' && (
+        {scanMode !== 'barcode' && (
           <View style={styles.shutterContainer} pointerEvents="box-none">
             <TouchableOpacity
               style={[styles.shutter, analyzing && styles.shutterDisabled]}
@@ -1019,6 +1045,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   barcodeButtonOn: { backgroundColor: '#00E5A0' },
+  labelButton: {
+    position: 'absolute',
+    right: 20,
+    top: 172,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  labelHint: {
+    position: 'absolute', left: 24, right: 24, top: '40%',
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, padding: 14,
+  },
+  labelHintText: { color: '#FFFFFF', fontSize: 15, textAlign: 'center', fontWeight: '600' },
   barcodeButtonText: { fontSize: 22 },
 
   // Barcode scanning overlay

@@ -94,6 +94,7 @@ export default function ProfileScreen() {
 
   function trialStatusText(): string | null {
     if (!entitlement) return null;
+    if (entitlement.status === 'beta') return 'Beta — free while testing';
     if (entitlement.status === 'trialing') {
       const ms   = new Date(entitlement.trialEndsAt).getTime() - Date.now();
       const days = Math.ceil(ms / (1000 * 60 * 60 * 24));

@@ -2,6 +2,30 @@
 
 This is the current path to get DiningLens off Andrew's home WiFi and into outside testing.
 
+## Status (checked 2026-11-27)
+
+`https://dininglens-api.onrender.com` returns Render's `x-render-routing: no-server`
+404, so **no backend is deployed**. Every EAS profile in `eas.json` points at that
+URL, so any build made now cannot analyze photos until the service exists.
+
+A production-mode install (`npm ci --omit=dev`) and boot with `NODE_ENV=production`
+was verified locally: `/health` returns `{"status":"ok"}`.
+
+Steps that need the account owner (Render sign-in and secrets):
+
+1. Render dashboard → **New → Blueprint** → pick `arb1117/dininglens`, branch `main`.
+2. Keep the service name `dininglens-api` so the URL matches `eas.json`. If Render
+   gives a different URL, update all three `EXPO_PUBLIC_PROXY_URL` values in `eas.json`.
+3. Paste `ANTHROPIC_API_KEY`, `USDA_API_KEY`, `GOOGLE_PLACES_API_KEY`. Leave
+   `CORS_ORIGINS` empty (see the CORS note below).
+4. `render.yaml` sets `autoDeploy: false`: after merging PRs, press **Manual Deploy**.
+5. Check `https://dininglens-api.onrender.com/health`.
+6. In the Anthropic console, set a monthly spend limit before inviting testers.
+
+Plan choice: `render.yaml` uses `plan: starter` (paid, stays awake). On the free
+plan the service sleeps after ~15 minutes idle and the first request takes up to
+30 s; the app's server-starting banner covers this, or add an external uptime ping.
+
 ## Backend
 
 Deploy the existing Express server to a Node-friendly host first:
@@ -41,6 +65,7 @@ Optional entitlement/scrape tuning (server defaults shown; only set these to
 override):
 
 ```text
+BETA_OPEN_ACCESS=true   # render.yaml default: trials never expire (KI-001); daily limits still apply
 TRIAL_DAYS=14
 TRIAL_COACH_DAILY_LIMIT=3
 PAID_COACH_DAILY_LIMIT=20

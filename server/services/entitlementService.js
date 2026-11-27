@@ -7,6 +7,10 @@ const PAID_COACH_DAILY_LIMIT   = Number(process.env.PAID_COACH_DAILY_LIMIT    ??
 const TRIAL_SCRAPE_DAILY_LIMIT = Number(process.env.TRIAL_SCRAPE_DAILY_LIMIT  ?? 5);
 const PAID_SCRAPE_DAILY_LIMIT  = Number(process.env.PAID_SCRAPE_DAILY_LIMIT   ?? 30);
 
+// Trial records live in memory and reset on every restart, so a free beta turns
+// expiry off rather than enforcing trials it cannot track. Daily limits still apply.
+const BETA_OPEN_ACCESS = process.env.BETA_OPEN_ACCESS === 'true';
+
 const store = new Map();
 
 function todayStr() {
@@ -52,6 +56,7 @@ function getEntitlement(actorId) {
 
 function getComputedStatus(rec) {
   if (rec.paid) return 'active';
+  if (BETA_OPEN_ACCESS) return 'beta';
   if (new Date(rec.trialEndsAt) > new Date()) return 'trialing';
   return 'expired';
 }
@@ -59,7 +64,7 @@ function getComputedStatus(rec) {
 function canUseApp(actorId) {
   const rec = getOrCreateEntitlement(actorId);
   const status = getComputedStatus(rec);
-  return status === 'active' || status === 'trialing';
+  return status === 'active' || status === 'trialing' || status === 'beta';
 }
 
 function canUseCoach(actorId) {

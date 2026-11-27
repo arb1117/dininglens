@@ -16,6 +16,7 @@ import {
   calculateAll,
   estimateActivityLevel,
   goalKeyToBodyGoal,
+  parseGoalInput,
 } from '../utils/nutritionCalculator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Goals'>;
@@ -93,13 +94,6 @@ function NumInput({
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
-
-// Blank fields fall back to defaults, but an explicit 0 (e.g. a 0g carb goal) is kept.
-function parseGoal(input: string, fallback: number): number {
-  if (!input.trim()) return fallback;
-  const n = parseInt(input, 10);
-  return Number.isFinite(n) && n >= 0 ? n : fallback;
-}
 
 export default function GoalsScreen({ navigation }: Props) {
   const { setGoals } = useMealContext();
@@ -323,10 +317,10 @@ export default function GoalsScreen({ navigation }: Props) {
   }
 
   async function saveManual() {
-    const cal     = parseGoal(manCal, 2200);
-    const protein = parseGoal(manProtein, 150);
-    const carbs   = parseGoal(manCarbs, 220);
-    const fat     = parseGoal(manFat, 70);
+    const cal     = parseGoalInput(manCal, 2200);
+    const protein = parseGoalInput(manProtein, 150);
+    const carbs   = parseGoalInput(manCarbs, 220);
+    const fat     = parseGoalInput(manFat, 70);
     if (cal <= 0) {
       Alert.alert('Calorie goal required', 'Enter a daily calorie goal above 0.');
       return;

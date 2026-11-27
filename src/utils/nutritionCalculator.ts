@@ -188,3 +188,10 @@ export function goalKeyToBodyGoal(key: 'lose' | 'maintain' | 'build' | 'recompos
   };
   return map[key] ?? 'maintain';
 }
+
+// Blank fields fall back to defaults, but an explicit 0 (e.g. a 0g carb goal) is kept.
+export function parseGoalInput(input: string, fallback: number): number {
+  if (!input.trim()) return fallback;
+  const n = parseInt(input, 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}

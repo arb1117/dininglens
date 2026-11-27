@@ -40,7 +40,8 @@ If you do not receive a TestFlight invite, contact the developer directly.
   request after a gap may take 5–30 seconds. The app shows a "Server starting
   up…" banner — just wait and try again.
 - **Billing is disabled:** The "Subscribe" button does nothing yet.
-  Everyone is on a 14-day trial.
+  The beta is free: Profile shows "Beta — free while testing" and access does
+  not expire (daily AI coach limits still apply).
 - **No cloud backup:** Your meal history is stored on your device only.
   Reinstalling the app or wiping your phone loses all data.
 - **JS-rendered restaurant menus may not load:** The menu scanner works best
@@ -442,8 +443,11 @@ later scripts assume earlier ones logged data.
 
 ### 8.5 Delete item
 
-- **Steps:** Delete a single item from a multi-item meal.
-- **Expected result:** Item removed; meal totals shrink; Dashboard updates.
+- **Steps:** Delete a single item from a multi-item meal (✕ on the item). Then
+  delete another and tap **UNDO** on the bar at the bottom within 5 seconds.
+- **Expected result:** Item removed; meal totals shrink; Dashboard updates. An
+  "Item removed · UNDO" bar appears for 5 seconds; UNDO restores the item and
+  totals exactly, including when the removed item was the meal's last one.
 - **Pass/fail notes:** ______________________________________
 - **Severity if failed:** Major
 
@@ -657,6 +661,66 @@ later scripts assume earlier ones logged data.
 
 ---
 
+## 14. New in this build
+
+### 14.1 Nutrition-label scan (camera)
+
+- **Steps:** Open Scan Meal, tap 🏷 (below 📦). Photograph a posted
+  nutrition card at a dining hall station, or a packaged-food label. Repeat
+  using the 🖼 gallery button with a saved photo of a label.
+- **Expected result:** "Reading nutrition label…" then the Estimate screen
+  with one item marked **🏷 Label** and "Read from the posted label". Calories,
+  protein, carbs and fat match the printed per-serving values. Photographing
+  something that is not a label shows "Couldn't read calories on that label"
+  with **Retake**.
+- **Pass/fail notes:** ______________________________________
+- **Severity if failed:** Major
+
+### 14.2 Barcode error messages
+
+- **Steps:** Scan an unknown barcode; scan with the server stopped (developer);
+  scan with airplane mode on.
+- **Expected result:** Specific messages: "Product not found", "Can't reach the
+  DiningLens server", "The food database isn't responding". A product with no
+  nutrition listed says so and offers manual search.
+- **Pass/fail notes:** ______________________________________
+- **Severity if failed:** Minor
+
+### 14.3 Zero macro goals
+
+- **Steps:** Goals → manual targets → set carbs to 0, leave fat blank, save.
+- **Expected result:** Carbs goal stays 0; fat uses the default (70). A
+  calorie goal of 0 is refused with "Calorie goal required".
+- **Pass/fail notes:** ______________________________________
+- **Severity if failed:** Major
+
+### 14.4 Weight in kg
+
+- **Steps:** Profile → Log weight → tap "Use kg", enter 80, save. Restart the app.
+- **Expected result:** Weight shows "80 kg" and stays in kg after restart.
+  Switching back to lbs shows about 176.4 lbs.
+- **Pass/fail notes:** ______________________________________
+- **Severity if failed:** Minor
+
+### 14.5 Volume units in Search
+
+- **Steps:** Search a cereal whose serving reads like "1 cup (30g)" and pick
+  ½ cup; then search a food whose serving is grams only (e.g. "100g").
+- **Expected result:** ½ cup = half a serving. Gram-only foods offer g and oz
+  but no cup/tbsp/tsp.
+- **Pass/fail notes:** ______________________________________
+- **Severity if failed:** Major
+
+### 14.6 Custom foods are not duplicated
+
+- **Steps:** Search → + Custom → log "Protein Shake" twice with different calories.
+- **Expected result:** Profile → My Foods shows one "Protein Shake", used 2×,
+  with the latest calories.
+- **Pass/fail notes:** ______________________________________
+- **Severity if failed:** Minor
+
+---
+
 ## How to report feedback
 
 **What to include in every report:**
@@ -681,7 +745,6 @@ when the app reopens it will ask "Do you want to send crash data?" — tap **OK*
 - "Subscribe" button does nothing — billing is not implemented yet.
 - Server takes 10–30 seconds on first use — this is a cold start.
 - Your meal history disappears after reinstall — no cloud sync yet.
-- Trial status may reset after a server restart — known limitation (KI-001).
 - Nutritional numbers are slightly off from the real menu — AI estimation
   is an approximation.
 - Restaurant menus don't load for some restaurants — JS-rendered sites

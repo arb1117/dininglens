@@ -68,6 +68,16 @@ type SheetState = {
 
 function round1(n: number) { return Math.round(n * 10) / 10; }
 
+const ML_PER_UNIT = { cup: 240, tbsp: 15, tsp: 5 } as const;
+
+function parseQuantity(raw: string): number {
+  const parts = raw.trim().split(/\s+/);
+  return parts.reduce((sum, part) => {
+    const [num, den] = part.split('/').map(Number);
+    return sum + (den ? num / den : num);
+  }, 0);
+}
+
 export default function SearchScreen({ navigation, route }: Props) {
   const {
     addMeal, mealLog, updateMealItem,
@@ -169,7 +179,7 @@ export default function SearchScreen({ navigation, route }: Props) {
       carbs: item.carbs,
       fat: item.fat,
       source: 'manual',
-    }).then(saved => setCustomFoods(prev => [saved, ...prev])).catch(() => {});
+    }).then(saved => setCustomFoods(prev => [saved, ...prev.filter(f => f.id !== saved.id)])).catch(() => {});
     setCustomVisible(false);
     setCustomName(''); setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
     setToastName(name);
@@ -374,11 +384,20 @@ export default function SearchScreen({ navigation, route }: Props) {
     return null;
   }
 
+  // Volume units need a known volume per serving: converting cups to grams assumes a
+  // density, and 240 g per cup is only true for water-like foods.
   function parseMlVolume(servingSize: string): number | null {
-    const ml = servingSize.match(/(\d+\.?\d*)\s*(ml|mL)/);
+    const ml = servingSize.match(/(\d+\.?\d*)\s*(ml|mL)\b/);
     if (ml) return parseFloat(ml[1]);
     const floz = servingSize.match(/(\d+\.?\d*)\s*fl\.?\s*oz/i);
     if (floz) return parseFloat(floz[1]) * 29.57;
+    const household = servingSize.match(/(\d+\s+\d+\/\d+|\d+\/\d+|\d+\.?\d*)\s*(cups?|tbsps?|tablespoons?|tsps?|teaspoons?)\b/i);
+    if (household) {
+      const qty = parseQuantity(household[1]);
+      const u = household[2].toLowerCase();
+      const perUnit = u.startsWith('c') ? ML_PER_UNIT.cup : u.startsWith('tb') || u.startsWith('table') ? ML_PER_UNIT.tbsp : ML_PER_UNIT.tsp;
+      if (qty > 0) return qty * perUnit;
+    }
     return null;
   }
 
@@ -386,8 +405,8 @@ export default function SearchScreen({ navigation, route }: Props) {
     const gw = parseGramWeight(servingSize);
     const ml = parseMlVolume(servingSize);
     const opts = ['serving'];
-    if (gw) opts.push('g', 'oz', 'cup', 'tbsp', 'tsp');
-    else if (ml) opts.push('ml', 'fl oz', 'cup', 'tbsp', 'tsp');
+    if (gw) opts.push('g', 'oz');
+    if (ml) opts.push('ml', 'fl oz', 'cup', 'tbsp', 'tsp');
     opts.push('piece', 'slice', 'scoop');
     return opts;
   }
@@ -399,9 +418,9 @@ export default function SearchScreen({ navigation, route }: Props) {
       case 'oz':   return gw ? (n * 28.35) / gw : n;
       case 'ml':   return ml ? n / ml : n;
       case 'fl oz': return ml ? (n * 29.57) / ml : n;
-      case 'cup':  return gw ? (n * 240) / gw : ml ? (n * 240) / ml : n;
-      case 'tbsp': return gw ? (n * 15)  / gw : ml ? (n * 15)  / ml : n;
-      case 'tsp':  return gw ? (n * 5)   / gw : ml ? (n * 5)   / ml : n;
+      case 'cup':
+      case 'tbsp':
+      case 'tsp':  return ml ? (n * ML_PER_UNIT[u]) / ml : n;
       default: return n; // serving, piece, slice, scoop
     }
   }

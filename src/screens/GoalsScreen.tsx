@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform,
+  ScrollView, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../App';
@@ -93,6 +93,13 @@ function NumInput({
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
+
+// Blank fields fall back to defaults, but an explicit 0 (e.g. a 0g carb goal) is kept.
+function parseGoal(input: string, fallback: number): number {
+  if (!input.trim()) return fallback;
+  const n = parseInt(input, 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
 
 export default function GoalsScreen({ navigation }: Props) {
   const { setGoals } = useMealContext();
@@ -316,10 +323,14 @@ export default function GoalsScreen({ navigation }: Props) {
   }
 
   async function saveManual() {
-    const cal     = parseInt(manCal)     || 2200;
-    const protein = parseInt(manProtein) || 150;
-    const carbs   = parseInt(manCarbs)   || 220;
-    const fat     = parseInt(manFat)     || 70;
+    const cal     = parseGoal(manCal, 2200);
+    const protein = parseGoal(manProtein, 150);
+    const carbs   = parseGoal(manCarbs, 220);
+    const fat     = parseGoal(manFat, 70);
+    if (cal <= 0) {
+      Alert.alert('Calorie goal required', 'Enter a daily calorie goal above 0.');
+      return;
+    }
     const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
     await setJSON(STORAGE_KEYS.GOALS, g);
     setGoals(g);

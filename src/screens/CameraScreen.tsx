@@ -264,10 +264,18 @@ export default function CameraScreen({ navigation, route }: Props) {
     setBarcodeNotFoundCode(null);
     try {
       const res = await apiFetch(`/barcode?code=${encodeURIComponent(data)}`);
-      if (res.status === 404) {
-        setBarcodeError('Product not found — try searching manually');
+      if (res.status === 404 || res.status === 422) {
+        const body: { name?: string | null } = await res.json().catch(() => ({}));
+        setBarcodeError(res.status === 404
+          ? 'Product not found — try searching manually'
+          : `${body.name ?? 'This product'} has no nutrition info listed — try searching manually`);
         setBarcodeNotFoundCode(data);
-        setBarcodeScanning(false);
+        return;
+      }
+      if (res.status === 401 || res.status === 403) { showTrialExpiredAlert(); return; }
+      if (res.status === 429) { setBarcodeError('Too many scans — wait a minute and try again'); return; }
+      if (res.status === 502 || res.status === 504) {
+        setBarcodeError('The food database isn’t responding — try again shortly');
         return;
       }
       if (!res.ok) throw new Error(`Server ${res.status}`);
@@ -286,8 +294,10 @@ export default function CameraScreen({ navigation, route }: Props) {
         mode: 'generic' as const,
       };
       navigation.navigate('Estimate', { analysisResult, source: 'barcode' });
-    } catch {
-      setBarcodeError('Lookup failed — try again');
+    } catch (err) {
+      setBarcodeError(err instanceof TypeError
+        ? 'Can’t reach the DiningLens server — check your connection'
+        : 'Lookup failed — try again');
     } finally {
       setBarcodeScanning(false);
     }

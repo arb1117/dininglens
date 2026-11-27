@@ -707,6 +707,10 @@ app.get('/barcode', barcodeLimiter, requireActiveEntitlement, async (req, res) =
   try {
     const url = `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(code)}.json`;
     const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok && r.status !== 404) {
+      console.error(`[/barcode] upstream ${r.status} for ${code}`);
+      return res.status(502).json({ error: 'upstream_unavailable' });
+    }
     const data = await r.json();
 
     if (data.status !== 1 || !data.product) {
@@ -717,10 +721,15 @@ app.get('/barcode', barcodeLimiter, requireActiveEntitlement, async (req, res) =
     const p = data.product;
     const n = p.nutriments || {};
 
-    const cal100g = n['energy-kcal_100g'] || 0;
     const pro100g = n['proteins_100g'] || 0;
     const carb100g = n['carbohydrates_100g'] || 0;
     const fat100g = n['fat_100g'] || 0;
+    const cal100g = n['energy-kcal_100g'] || (n['energy_100g'] ? n['energy_100g'] / KJ_PER_KCAL : 0);
+
+    if (!cal100g && !pro100g && !carb100g && !fat100g) {
+      console.log(`[/barcode] no nutrition data: ${code}`);
+      return res.status(422).json({ error: 'no_nutrition', name: p.product_name || null });
+    }
 
     const servingGrams = parseFloat(p.serving_quantity) || 100;
     const brand = p.brands ? p.brands.split(',')[0].trim() + ' ' : '';
@@ -740,6 +749,7 @@ app.get('/barcode', barcodeLimiter, requireActiveEntitlement, async (req, res) =
     return res.json(result);
   } catch (err) {
     console.error('[/barcode] Error:', err.message, 'requestId=', req.requestId);
+    if (err.name === 'TimeoutError') return res.status(504).json({ error: 'upstream_timeout' });
     sendServerError(res, 'Barcode lookup failed');
   }
 });

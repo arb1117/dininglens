@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { View, Text, FlatList, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMealContext, LoggedMeal, MacroItem, autoDetectPeriod } from '../context/MealContext';
@@ -133,8 +133,12 @@ function MealCard({ meal, onEditItem, onDelete, onLogAgain, onRemoveItem, onSave
 }
 
 export default function HistoryScreen({ navigation }: Props) {
-  const { mealLog, addMeal, deleteMeal, deleteMealItem } = useMealContext();
+  const { mealLog, addMeal, deleteMeal, deleteMealItem, restoreMeal } = useMealContext();
   const [toast, setToast] = useState<string | null>(null);
+  const [undoMeal, setUndoMeal] = useState<LoggedMeal | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
   const today = new Date().toDateString();
 
   const groupedDays = useMemo(() => {
@@ -198,7 +202,19 @@ export default function HistoryScreen({ navigation }: Props) {
   }
 
   function handleRemoveItem(mealId: string, itemIndex: number) {
+    const snapshot = mealLog.find(m => m.id === mealId);
     deleteMealItem(mealId, itemIndex);
+    if (!snapshot) return;
+    setUndoMeal(snapshot);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndoMeal(null), 5000);
+  }
+
+  function handleUndoRemove() {
+    if (!undoMeal) return;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    restoreMeal(undoMeal);
+    setUndoMeal(null);
   }
 
   function handleSave(meal: LoggedMeal) {
@@ -257,6 +273,14 @@ export default function HistoryScreen({ navigation }: Props) {
           ))}
         </ScrollView>
       )}
+      {undoMeal !== null && (
+        <View style={styles.undoBar}>
+          <Text style={styles.undoText}>Item removed</Text>
+          <TouchableOpacity onPress={handleUndoRemove} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={styles.undoBtn}>UNDO</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -270,6 +294,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#00E5A0', paddingVertical: 12, alignItems: 'center',
   },
   toastText: { color: '#0F0F0F', fontWeight: '700', fontSize: 15 },
+
+  undoBar: {
+    position: 'absolute', left: 20, right: 20, bottom: 20, zIndex: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A', borderRadius: 12,
+    paddingVertical: 14, paddingHorizontal: 16,
+  },
+  undoText: { color: '#FFFFFF', fontSize: 15 },
+  undoBtn: { color: '#00E5A0', fontWeight: '800', fontSize: 15 },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 10 },
   emptyIcon: { fontSize: 48, marginBottom: 8 },

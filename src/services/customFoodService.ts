@@ -37,9 +37,25 @@ export async function listCustomFoods(): Promise<StoredCustomFood[]> {
   });
 }
 
+// Re-logging the same food updates the existing entry instead of piling up duplicates.
 export async function saveCustomFood(input: CustomFoodInput): Promise<StoredCustomFood> {
   const foods = await loadAll();
   const now = new Date().toISOString();
+  const key = normalize(input.name);
+  const brand = normalize(input.brand ?? '');
+  const idx = foods.findIndex(f => normalize(f.name) === key && normalize(f.brand ?? '') === brand);
+  if (idx !== -1) {
+    const existing = foods[idx];
+    const updated: StoredCustomFood = {
+      ...existing,
+      ...input,
+      useCount: (Number.isFinite(existing.useCount) ? existing.useCount : 0) + 1,
+      lastUsedAt: now,
+      updatedAt: now,
+    };
+    await saveAll([updated, ...foods.filter((_, i) => i !== idx)]);
+    return updated;
+  }
   const food: StoredCustomFood = {
     ...input,
     id: uid(),

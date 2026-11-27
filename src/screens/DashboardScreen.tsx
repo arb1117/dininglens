@@ -593,7 +593,7 @@ export default function DashboardScreen() {
           </TouchableOpacity>
           {microsExpanded && (
             <Text style={s.microsEmpty}>
-              Log more meals with USDA data to see micronutrient breakdown
+              Coming soon. This beta tracks calories, protein, carbs, and fat only.
             </Text>
           )}
         </View>

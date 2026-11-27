@@ -89,6 +89,7 @@ type MealContextType = {
   updateMealItem: (mealId: string, itemIndex: number, updated: MacroItem) => void;
   deleteMeal: (mealId: string) => void;
   deleteMealItem: (mealId: string, itemIndex: number) => void;
+  restoreMeal: (meal: LoggedMeal) => void;
   goals: UserGoals;
   setGoals: (goals: UserGoals) => void;
   menuItems: MenuItem[];
@@ -114,6 +115,7 @@ const MealContext = createContext<MealContextType>({
   updateMealItem: () => {},
   deleteMeal: () => {},
   deleteMealItem: () => {},
+  restoreMeal: () => {},
   goals: DEFAULT_GOALS,
   setGoals: () => {},
   menuItems: [],
@@ -231,6 +233,15 @@ export function MealProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  function restoreMeal(meal: LoggedMeal) {
+    setMealLog(prev => {
+      const next = [meal, ...prev.filter(m => m.id !== meal.id)]
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      persistMeals(next);
+      return next;
+    });
+  }
+
   function deleteMealItem(mealId: string, itemIndex: number) {
     setMealLog(prev => {
       const next = prev
@@ -298,6 +309,7 @@ export function MealProvider({ children }: { children: ReactNode }) {
         updateMealItem,
         deleteMeal,
         deleteMealItem,
+        restoreMeal,
         goals,
         setGoals,
         menuItems,

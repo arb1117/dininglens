@@ -2,13 +2,12 @@ import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform,
-  ActivityIndicator, Animated,
+  Animated,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import { useMealContext } from '../context/MealContext';
 import type { RootStackParamList } from '../../App';
-import { API_BASE_URL } from '../config/api';
 import { useEntitlement } from '../hooks/useEntitlement';
 import { apiFetch } from '../services/apiClient';
 import PaywallPlaceholder from '../components/PaywallPlaceholder';

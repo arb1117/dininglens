@@ -66,8 +66,7 @@ function round1(n: number) { return Math.round(n * 10) / 10; }
 
 type ItemSource = 'ai' | 'menu' | 'barcode' | 'label' | 'manual';
 
-const QUANTITY_UNITS = ['count', 'grams', 'oz', 'cups', 'tbsp', 'tsp', 'slices', 'pieces'] as const;
-type QuantityUnit = typeof QUANTITY_UNITS[number];
+type QuantityUnit = 'count' | 'grams' | 'oz' | 'cups' | 'tbsp' | 'tsp' | 'slices' | 'pieces';
 
 type NormalizedItem = {
   id: string;

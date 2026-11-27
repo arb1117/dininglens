@@ -6,6 +6,7 @@ import { STORAGE_KEYS, toDateKey } from '../storage/storageKeys';
 import { getJSON, setJSON, removeKey } from '../storage/storageClient';
 import { migrateStorageIfNeeded } from '../storage/migrations';
 import { sanitizeArray, sanitizeMeal, sanitizeGoals, sanitizeExerciseEntry } from '../storage/storageValidation';
+import type { MealPeriod, MacroItem, NutritionTotals } from '../types/nutrition';
 
 export type UserGoals = {
   preset: 'lose' | 'maintain' | 'build' | 'recomposition';
@@ -47,7 +48,6 @@ const DEFAULT_GOALS: UserGoals = {
 };
 
 export type { MealPeriod, MacroItem, NutritionTotals, FoodItem, VenueMetadata } from '../types/nutrition';
-import type { MealPeriod, MacroItem, NutritionTotals } from '../types/nutrition';
 
 export function autoDetectPeriod(date = new Date()): MealPeriod {
   const h = date.getHours();

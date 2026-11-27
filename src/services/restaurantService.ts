@@ -7,7 +7,7 @@ export interface Restaurant {
   chain: string;
   // Place location from Google; callers compute distance from the user's coords.
   placeCoords: { lat: number; lon: number } | null;
-  menuItems?: Array<{ id: string; name: string; calories: number; protein: number; carbs: number; fat: number }>;
+  menuItems?: { id: string; name: string; calories: number; protein: number; carbs: number; fat: number }[];
 }
 
 export interface RestaurantMenuItem {

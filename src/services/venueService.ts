@@ -11,7 +11,7 @@ export type Venue = {
   locationId: string;
   provider: DiningProvider | 'generic';
   coords: Coords;
-  menuItems?: Array<{ id: string; name: string; calories: number; protein: number; carbs: number; fat: number }>;
+  menuItems?: { id: string; name: string; calories: number; protein: number; carbs: number; fat: number }[];
 };
 
 export type VenueDetectionResult = {

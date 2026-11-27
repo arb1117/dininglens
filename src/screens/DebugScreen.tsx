@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Alert, ActivityIndicator, Clipboard,
+  Alert, ActivityIndicator, Clipboard, SafeAreaView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SafeAreaView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { API_BASE_URL } from '../config/api';
 import { useMealContext } from '../context/MealContext';

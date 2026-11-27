@@ -110,7 +110,6 @@ export default function SearchScreen({ navigation, route }: Props) {
   const [pickedPeriod, setPickedPeriod] = useState<MealPeriod>(
     selectedPeriod ?? autoDetectPeriod()
   );
-  const periodLocked = !!selectedPeriod;
 
   // Custom foods from persistent store
   const [customFoods, setCustomFoods] = useState<StoredCustomFood[]>([]);

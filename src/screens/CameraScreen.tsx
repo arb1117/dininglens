@@ -44,7 +44,7 @@ type VenueSearchResult = {
 };
 
 export default function CameraScreen({ navigation, route }: Props) {
-  const { setMenuItems, setPeriodLabel, setVenue, venue, periodLabel, menuItems, mealLog, goals } =
+  const { setMenuItems, setPeriodLabel, setVenue, venue, menuItems, mealLog, goals } =
     useMealContext();
   const { entitlement } = useEntitlement();
 

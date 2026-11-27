@@ -802,7 +802,7 @@ app.post('/estimate-exercise', aiLimiter, smallJsonBody, requireActiveEntitlemen
   try {
     const result = await aiProvider.estimateExercise(name, duration, type);
     res.json({ caloriesBurned: Math.round(result.caloriesBurned ?? 0) });
-  } catch (err) {
+  } catch {
     // Fallback: rough estimate
     const kcal = type === 'cardio' ? duration * 7 : duration * 4;
     res.json({ caloriesBurned: kcal });

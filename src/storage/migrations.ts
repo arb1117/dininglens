@@ -3,7 +3,7 @@ import { STORAGE_KEYS } from './storageKeys';
 
 export const CURRENT_SCHEMA_VERSION = 1;
 
-const LEGACY_KEY_MAP: Array<{ from: string; to: string }> = [
+const LEGACY_KEY_MAP: { from: string; to: string }[] = [
   { from: '@dininglens_meal_log', to: STORAGE_KEYS.MEAL_LOG },
   { from: '@dininglens_goals',    to: STORAGE_KEYS.GOALS },
   { from: '@dininglens_profile',  to: STORAGE_KEYS.PROFILE },

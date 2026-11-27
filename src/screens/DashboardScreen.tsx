@@ -335,6 +335,7 @@ export default function DashboardScreen() {
   const { status: backendStatus, retry: retryBackend } = useBackendHealth();
 
   // todayKey changes at midnight, which re-renders this screen into the new day.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const today = useMemo(() => new Date().toDateString(), [todayKey]);
 
   const todayMeals = useMemo(

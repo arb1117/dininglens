@@ -227,8 +227,6 @@ export default function GoalsScreen({ navigation }: Props) {
     return null;
   }
 
-  const profileComplete = !validateProfile();
-
   // ── Calculate locally ─────────────────────────────────────────────────────
   function handleCalculate() {
     const weightN   = parseFloat(weight);

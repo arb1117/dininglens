@@ -157,6 +157,8 @@ const analyzeSchema = z.object({
   })).max(200).optional(),
 });
 
+const readLabelSchema = z.object({ imageBase64: z.string().min(100).max(15_000_000) });
+
 const reanalyzeSchema = analyzeSchema.extend({
   feedback: z.string().min(1).max(500),
   previousItems: z.array(z.any()).optional(),
@@ -384,6 +386,43 @@ app.post('/analyze', aiLimiter, requireActiveEntitlement, largeJsonBody, async (
     if (err.timeout) return res.status(504).json({ error: 'Analysis timed out', detectedItems: [], reason: 'timeout', validated: true });
     console.error('[/analyze] Error:', err.message ?? err, 'requestId=', req.requestId);
     sendServerError(res, 'Analysis failed');
+  }
+});
+
+// ─── /read-label ─────────────────────────────────────────────────────────────
+// Reads a posted nutrition card or package label. Returns the same shape as
+// /analyze so the Estimate screen can show it like any other single item.
+
+app.post('/read-label', aiLimiter, requireActiveEntitlement, largeJsonBody, async (req, res) => {
+  console.log('[/read-label] request received');
+  const body = validate(readLabelSchema, req.body, res);
+  if (!body) return;
+  const { imageBase64 } = body;
+  if (imageTooLarge(imageBase64)) return sendImageTooLarge(res);
+  try {
+    const label = await aiProvider.readNutritionLabel(imageBase64);
+    if (!label.found) {
+      console.log('[/read-label] no readable label');
+      return res.json({ detectedItems: [], mode: 'generic', reason: 'no_label' });
+    }
+    console.log(`[/read-label] read: ${label.name}, cal=${label.calories}`);
+    res.json({
+      mode: 'generic',
+      detectedItems: [{
+        name: label.name,
+        portionMultiplier: 1,
+        confidence: 1,
+        calories: label.calories,
+        protein: label.protein,
+        carbs: label.carbs,
+        fat: label.fat,
+        servingDescription: label.servingSize ?? undefined,
+      }],
+    });
+  } catch (err) {
+    if (err.timeout) return res.status(504).json({ error: 'Label read timed out', detectedItems: [], reason: 'timeout', validated: true });
+    console.error('[/read-label] Error:', err.message ?? err, 'requestId=', req.requestId);
+    sendServerError(res, 'Label read failed');
   }
 });
 

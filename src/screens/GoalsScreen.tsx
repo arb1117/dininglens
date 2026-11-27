@@ -296,6 +296,14 @@ export default function GoalsScreen({ navigation }: Props) {
     await setJSON(STORAGE_KEYS.PROFILE, profile);
   }
 
+  // First run (from Permissions) has no MainTabs underneath, so reset instead of
+  // pushing a second navigator on top of Goals.
+  function goToMainTabs() {
+    const hasMainTabs = navigation.getState().routes.some(r => r.name === 'MainTabs');
+    if (hasMainTabs) navigation.popTo('MainTabs');
+    else navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+  }
+
   async function saveAndGo(cal: number, protein: number, carbs: number, fat: number) {
     const g: UserGoals = { preset: selectedGoal, calories: cal, protein, carbs, fat };
     await setJSON(STORAGE_KEYS.GOALS, g);
@@ -304,7 +312,7 @@ export default function GoalsScreen({ navigation }: Props) {
     const weightN = parseFloat(weight) || 0;
     const weightLbs = useKg ? weightN * 2.205 : weightN;
     seedWeightFromProfile(weightLbs).catch(() => {});
-    navigation.navigate('MainTabs');
+    goToMainTabs();
   }
 
   async function saveManual() {
@@ -319,7 +327,7 @@ export default function GoalsScreen({ navigation }: Props) {
     const weightN = parseFloat(weight) || 0;
     const weightLbs = useKg ? weightN * 2.205 : weightN;
     seedWeightFromProfile(weightLbs).catch(() => {});
-    navigation.navigate('MainTabs');
+    goToMainTabs();
   }
 
   function openManualFromResult() {

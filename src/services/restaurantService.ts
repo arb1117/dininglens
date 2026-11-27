@@ -5,7 +5,8 @@ export interface Restaurant {
   id: string;
   name: string;
   chain: string;
-  distance_km: number;
+  // Place location from Google; callers compute distance from the user's coords.
+  placeCoords: { lat: number; lon: number } | null;
   menuItems?: Array<{ id: string; name: string; calories: number; protein: number; carbs: number; fat: number }>;
 }
 
@@ -38,6 +39,10 @@ export async function detectNearbyRestaurant(
     if (!place?.name) return null;
 
     const { placeId, name, website } = place;
+    const placeCoords =
+      typeof place.lat === 'number' && typeof place.lon === 'number'
+        ? { lat: place.lat, lon: place.lon }
+        : null;
 
     // Step 2: Chain match — check CHAIN_MENUS
     const matchedChain = findChainMatch(name);
@@ -46,7 +51,7 @@ export async function detectNearbyRestaurant(
         id: placeId,
         name,
         chain: matchedChain,
-        distance_km: 0.05,
+        placeCoords,
         menuItems: getChainMenuItems(matchedChain),
       };
     }
@@ -72,7 +77,7 @@ export async function detectNearbyRestaurant(
         fat: item.fat ?? 0,
       }));
 
-      return { id: placeId, name, chain: name, distance_km: 0.05, menuItems };
+      return { id: placeId, name, chain: name, placeCoords, menuItems };
     }
 
     return null;

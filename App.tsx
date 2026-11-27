@@ -40,12 +40,14 @@ export type RootStackParamList = {
     imageBase64?: string;
     source?: string;
     analysisError?: boolean;
+    analysisErrorMessage?: string;
     addedItem?: { name: string; cal: number; protein: number; carbs: number; fat: number };
   };
   History: undefined;
   Search: {
     query?: string;
     context?: string;
+    openCustom?: boolean;
     period?: 'breakfast' | 'lunch' | 'dinner' | 'snacks';
     editMode?: boolean;
     mealId?: string;

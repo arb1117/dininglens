@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import type { NavigationProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../App';
 
 type Props = {
@@ -10,7 +10,7 @@ type Props = {
 };
 
 export default function PaywallPlaceholder({ reason = 'trial_expired', resetAt }: Props) {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const title   = reason === 'coach_limit' ? 'Daily limit reached' : 'Free trial ended';
   const body    = reason === 'coach_limit'
@@ -30,7 +30,7 @@ export default function PaywallPlaceholder({ reason = 'trial_expired', resetAt }
 
       <TouchableOpacity
         style={s.logBtn}
-        onPress={() => navigation.navigate('MainTabs', { screen: 'Dashboard' })}
+        onPress={() => navigation.popTo('MainTabs', { screen: 'Dashboard' })}
       >
         <Text style={s.logText}>View my log</Text>
       </TouchableOpacity>

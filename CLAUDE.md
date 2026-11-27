@@ -162,11 +162,16 @@ For EAS builds, all three environments in `eas.json` hardcode
 
 ## Testing
 
-There is no automated test suite yet. Verification is manual:
+Automated checks (CI runs all three on every PR, `.github/workflows/ci.yml`):
 
-1. Run `npm run check` — fails on TypeScript errors or Node syntax errors.
-2. Start the server locally and run `curl` against each route you changed.
-3. Run the app in Expo Go or a simulator and exercise the affected screen.
+1. `npm run check` — TypeScript errors or Node syntax errors.
+2. `npm run lint` — ESLint (`eslint-config-expo`); must report 0 problems.
+3. `npm test` — Jest, two projects: app tests in `src/**/*.test.ts(x)`
+   (`jest-expo`) and server tests in `server/**/*.test.js` (node + supertest;
+   `server/index.js` exports the app and only listens when run directly).
+
+Then verify by hand: `curl` each changed route against a local server, and
+exercise the affected screen in Expo Go, a simulator, or the Android emulator.
 
 ---
 
